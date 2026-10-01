@@ -25,8 +25,8 @@
     ],
     "tasks": [
         {
-            "label": "Build damiao_h7",
-            "type": "shell",
+            "label": "Build selected board",
+            "type": "process",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -45,21 +45,24 @@
             "windows": {
                 "command": "powershell",
                 "args": [
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
                     "-Command",
-                    "cmake -S ${workspaceFolder}/board/damiao_h7 -B ${workspaceFolder}/build/damiao_h7/Debug --preset Debug -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cmake --build ${workspaceFolder}/build/damiao_h7/Debug --config Debug -j ${env:NUMBER_OF_PROCESSORS}; Copy-Item -Path ${workspaceFolder}/build/damiao_h7/Debug/compile_commands.json -Destination ${workspaceFolder}/build/compile_commands.json -Force; Copy-Item -Path ${workspaceFolder}/build/damiao_h7/Debug/base.elf -Destination ${workspaceFolder}/build/damiao_h7.elf -Force"
+                    "$board='${input:selectBoard}'; cmake -S ${workspaceFolder}/board/$board -B ${workspaceFolder}/build/$board/Debug --preset Debug -G Ninja -DROBOT=arm -DBOARD=single -DCMAKE_C_COMPILER_LAUNCHER=ccache; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cmake --build ${workspaceFolder}/build/$board/Debug --config Debug -j ${env:NUMBER_OF_PROCESSORS}; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Copy-Item -Path ${workspaceFolder}/build/$board/Debug/compile_commands.json -Destination ${workspaceFolder}/build/compile_commands.json -Force; Copy-Item -Path ${workspaceFolder}/build/$board/Debug/base.elf -Destination ${workspaceFolder}/build/$board.elf -Force"
                 ]
             },
             "linux": {
                 "command": "bash",
                 "args": [
                     "-lc",
-                    "cmake -S ${workspaceFolder}/board/damiao_h7 -B ${workspaceFolder}/build/damiao_h7/Debug --preset Debug -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache && cmake --build ${workspaceFolder}/build/damiao_h7/Debug --config Debug -j $(nproc) && cp ${workspaceFolder}/build/damiao_h7/Debug/compile_commands.json ${workspaceFolder}/build/compile_commands.json && cp ${workspaceFolder}/build/damiao_h7/Debug/base.elf ${workspaceFolder}/build/damiao_h7.elf"
+                    "board='${input:selectBoard}'; cmake -S ${workspaceFolder}/board/$board -B ${workspaceFolder}/build/$board/Debug --preset Debug -G Ninja -DROBOT=arm -DBOARD=single -DCMAKE_C_COMPILER_LAUNCHER=ccache && cmake --build ${workspaceFolder}/build/$board/Debug --config Debug -j $(nproc) && cp ${workspaceFolder}/build/$board/Debug/compile_commands.json ${workspaceFolder}/build/compile_commands.json && cp ${workspaceFolder}/build/$board/Debug/base.elf ${workspaceFolder}/build/$board.elf"
                 ]
             }
         },
         {
-            "label": "Build dji_c",
-            "type": "shell",
+            "label": "Build damiao_h7",
+            "type": "process",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -74,8 +77,43 @@
             "windows": {
                 "command": "powershell",
                 "args": [
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
                     "-Command",
-                    "cmake -S ${workspaceFolder}/board/dji_c -B ${workspaceFolder}/build/dji_c/Debug --preset Debug -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cmake --build ${workspaceFolder}/build/dji_c/Debug --config Debug -j ${env:NUMBER_OF_PROCESSORS}; Copy-Item -Path ${workspaceFolder}/build/dji_c/Debug/compile_commands.json -Destination ${workspaceFolder}/build/compile_commands.json -Force; Copy-Item -Path ${workspaceFolder}/build/dji_c/Debug/base.elf -Destination ${workspaceFolder}/build/dji_c.elf -Force"
+                    "cmake -S ${workspaceFolder}/board/damiao_h7 -B ${workspaceFolder}/build/damiao_h7/Debug --preset Debug -G Ninja -DROBOT=arm -DBOARD=single -DCMAKE_C_COMPILER_LAUNCHER=ccache; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cmake --build ${workspaceFolder}/build/damiao_h7/Debug --config Debug -j ${env:NUMBER_OF_PROCESSORS}; Copy-Item -Path ${workspaceFolder}/build/damiao_h7/Debug/compile_commands.json -Destination ${workspaceFolder}/build/compile_commands.json -Force; Copy-Item -Path ${workspaceFolder}/build/damiao_h7/Debug/base.elf -Destination ${workspaceFolder}/build/damiao_h7.elf -Force"
+                ]
+            },
+            "linux": {
+                "command": "bash",
+                "args": [
+                    "-lc",
+                    "cmake -S ${workspaceFolder}/board/damiao_h7 -B ${workspaceFolder}/build/damiao_h7/Debug --preset Debug -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache && cmake --build ${workspaceFolder}/build/damiao_h7/Debug --config Debug -j $(nproc) && cp ${workspaceFolder}/build/damiao_h7/Debug/compile_commands.json ${workspaceFolder}/build/compile_commands.json && cp ${workspaceFolder}/build/damiao_h7/Debug/base.elf ${workspaceFolder}/build/damiao_h7.elf"
+                ]
+            }
+        },
+        {
+            "label": "Build dji_c",
+            "type": "process",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "focus": false,
+                "echo": true,
+                "showReuseMessage": false
+            },
+            "windows": {
+                "command": "powershell",
+                "args": [
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    "cmake -S ${workspaceFolder}/board/dji_c -B ${workspaceFolder}/build/dji_c/Debug --preset Debug -G Ninja -DROBOT=arm -DBOARD=single -DCMAKE_C_COMPILER_LAUNCHER=ccache; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cmake --build ${workspaceFolder}/build/dji_c/Debug --config Debug -j ${env:NUMBER_OF_PROCESSORS}; Copy-Item -Path ${workspaceFolder}/build/dji_c/Debug/compile_commands.json -Destination ${workspaceFolder}/build/compile_commands.json -Force; Copy-Item -Path ${workspaceFolder}/build/dji_c/Debug/base.elf -Destination ${workspaceFolder}/build/dji_c.elf -Force"
                 ]
             },
             "linux": {

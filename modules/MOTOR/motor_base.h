@@ -34,18 +34,37 @@ struct Motor_Base
 #define MOTOR_GET_DERIVED(base_ptr, derived_type) ((derived_type *)(base_ptr))
 
 /**
- * @brief 注册电机
- * @param motor 电机实例指针
+ * @brief 注册电机对象到全局链表。
+ *
+ * @param motor 输入，电机实例基类指针。
+ *
+ * @retval 无。
+ *
+ * @note 调用关系：由各电机驱动 Init 函数调用；注册后由 Motor_ControlAll() 和 Motor_ApplyAll() 统一调度。
  */
 void Motor_Register(Motor_Base *motor);
 
 /**
- * @brief 控制计算，统一执行: 离线/禁用 → ZeroState; 开环 → 跳过; 闭环 → 算法计算
+ * @brief 控制计算阶段：统一计算所有已注册电机的输出扭矩。
+ *
+ * @param 无。
+ *
+ * @retval 无。
+ *
+ * @note 调用关系：由 motor task 周期调用；本函数不发送 CAN，只更新 controller.output_torque。
+ * @note 行为说明：离线/禁用电机清零，开环电机跳过闭环算法，闭环电机调用统一算法计算。
  */
 void Motor_ControlAll(void);
 
 /**
- * @brief 输出应用
+ * @brief 输出应用阶段：各电机把输出应用到传输层。
+ *
+ * @param 无。
+ *
+ * @retval 无。
+ *
+ * @note 调用关系：由 motor task 在 Motor_ControlAll() 和 PowerControl_Update() 后调用。
+ * @note 调度策略：内部按 CAN 槽位轮询调用各电机 Apply()，保证同一条 CAN 内部相邻控制帧之间留出等待。
  */
 void Motor_ApplyAll(void);
 /**
