@@ -26,6 +26,7 @@ struct Motor_Base
     Motor_Safety_Limit_s safety;
     Offline_Device    *offline_dev;
     const char        *name;
+    volatile uint8_t   feedback_valid;
 
     void *transport_dev; /* 底层设备句柄 (Can_Device / UART_Device / PWM_Device) */
 

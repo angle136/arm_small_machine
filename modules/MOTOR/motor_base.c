@@ -85,6 +85,12 @@ static uint8_t motor_safety_check(Motor_Base *motor)
 
     if (motor->safety.enable == 0U) return 1U;
 
+    /*
+     * 限位必须等到驱动层收到过至少一帧有效反馈后才启用。
+     * 上电初始 raw/angle 通常为 0，不能把“尚未收到反馈”误判为真实位置超限。
+     */
+    if (motor->feedback_valid == 0U) return 1U;
+
     if (motor->offline_dev != NULL && Module_Offline_get_device_status(motor->offline_dev) == STATE_OFFLINE)
     {
         return 1U;
@@ -93,7 +99,15 @@ static uint8_t motor_safety_check(Motor_Base *motor)
     if (motor->safety.use_raw_position != 0U && motor->GetRawPosition != NULL)
     {
         int32_t raw = motor->GetRawPosition(motor);
-        if (raw < motor->safety.raw_min || raw > motor->safety.raw_max)
+        /*
+         * 支持跨越编码器回零点的合法区间：
+         * min <= max 表示普通区间 [min,max]；
+         * min > max 表示跨零区间 [min,raw_max] ∪ [raw_min,max]。
+         */
+        uint8_t raw_in_range = (motor->safety.raw_min <= motor->safety.raw_max)
+                                   ? (raw >= motor->safety.raw_min && raw <= motor->safety.raw_max)
+                                   : (raw >= motor->safety.raw_min || raw <= motor->safety.raw_max);
+        if (raw_in_range == 0U)
         {
             LOG_E("MOTOR LIMIT RAW: motor=%s raw=%ld limit=[%ld,%ld] angle=%.3f",
                   motor->name ? motor->name : "unknown_motor",
@@ -231,6 +245,15 @@ void Motor_ControlAll(void)
  */
 void Motor_ApplyAll(void)
 {
+    /*
+     * 先对全部已注册电机做一次安全预扫描，再开始任何一条控制报文的 Apply。
+     * 这样不会出现“前面的电机已经发出力矩，后面的电机才发现超限”的半周期风险。
+     */
+    for (Motor_Base *motor = g_motor_list; motor; motor = motor->next)
+    {
+        if (motor_safety_check(motor) == 0U) return;
+    }
+
     Motor_Base *can_cursor[BSP_CAN_BUS_NUM];
     for (uint8_t bus_index = 0; bus_index < BSP_CAN_BUS_NUM; ++bus_index)
     {
@@ -246,7 +269,7 @@ void Motor_ApplyAll(void)
             Motor_Base *motor = motor_find_next_can(can_cursor[bus_index], bus_index);
             if (motor != NULL)
             {
-                if (motor_safety_check(motor) && motor->Apply != NULL) motor->Apply(motor);
+                if (motor->Apply != NULL) motor->Apply(motor);
                 can_cursor[bus_index] = motor->next;
                 sent_in_slot          = 1U;
             }
@@ -260,7 +283,7 @@ void Motor_ApplyAll(void)
     {
         if (motor->transport != MOTOR_TRANSPORT_CAN && motor->Apply != NULL)
         {
-            if (motor_safety_check(motor)) motor->Apply(motor);
+            motor->Apply(motor);
         }
     }
 }

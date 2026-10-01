@@ -12,7 +12,7 @@ typedef struct
     uint8_t  feedback_id;    /**< 电机反馈帧中的 ID；达妙电机为电机 ID，GM6020 当前填 0。 */
     uint32_t tx_id;          /**< 本机发送到该电机的 CAN 标识符。 */
     uint32_t rx_id;          /**< 该电机反馈到本机的 CAN 标识符。 */
-    uint16_t raw_position;   /**< 原始位置值；达妙为反算 16 位位置，GM6020 为 0~8191 编码器值。 */
+    uint16_t raw_position;   /**< 原始位置值；达妙为反馈报文 16 位位置，GM6020 为 0~8191 编码器值。 */
     int16_t  raw_speed;      /**< 原始速度值；GM6020 为转速反馈，达妙当前保留为 0。 */
     int16_t  raw_current;    /**< 原始电流/力矩电流值；GM6020 使用实际电流，达妙当前保留为 0。 */
 

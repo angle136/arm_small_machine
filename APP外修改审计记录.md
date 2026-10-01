@@ -107,6 +107,16 @@
 | `modules/MOTOR/DJI/motor_dji.c` | GM6020/DJI 初始化时接入安全限位配置和 raw 读取回调，raw 值使用 `ecd`。 | 让 J4 GM6020 可使用 0~8191 编码器原始值做底层限位。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
 | `modules/OFFLINE/module_offline.h` / `modules/OFFLINE/module_offline.c` | 新增 `Module_Offline_SetFatalFault()` 和 `Module_Offline_HasFatalFault()`；Offline 线程在 fatal fault 锁存后统一持续红灯和蜂鸣。 | 使用统一系统报警模块处理蜂鸣，避免电机底层直接操作蜂鸣器；本次不改变看门狗喂狗/复位逻辑。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
 
+## 2026-10-02：底层限位预扫描和 raw 跨零处理
+
+### 本轮主动修改
+
+| 文件 | 修改内容 | 目的 | 验证 |
+| --- | --- | --- | --- |
+| `modules/MOTOR/motor_base.h` / `modules/MOTOR/motor_base.c` | 在 `Motor_Base` 中新增 `feedback_valid`；`Motor_ApplyAll()` 改为先对全部电机做安全限位预扫描，再开始任何 CAN/PWM/UART Apply；raw 限位支持跨编码器 0 点区间；限位在收到首帧有效反馈前不参与判定。 | 修复“前面电机已下发、后面电机才发现超限”的半周期风险；避免上电 raw 初始 0 在首帧反馈前误触发；支持 GM6020/达妙 raw 区间跨 0 点。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
+| `modules/MOTOR/DAMIAO/motor_damiao.c` | 达妙接收回调在完成反馈解码后置 `base.feedback_valid=1`。 | 明确 raw/角度限位必须基于真实反馈帧，避免未收到反馈时误判。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
+| `modules/MOTOR/DJI/motor_dji.c` | DJI/GM6020 接收回调在完成反馈解码后置 `base.feedback_valid=1`。 | 明确 raw/角度限位必须基于真实反馈帧，避免未收到反馈时误判。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
+
 ## 后续记录格式
 
 后续每次发生 App 层外修改时，在本文件末尾新增日期、提交、文件、目的、验证和来源；如果只修改 `apps/`，在交付说明中注明“无 App 层外修改”。

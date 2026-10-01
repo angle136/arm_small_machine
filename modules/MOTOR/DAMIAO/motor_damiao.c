@@ -76,6 +76,8 @@ static void dm_can_rx_callback(Can_Device *dev, const uint8_t *data, uint8_t len
     motor->base.measure.total_angle += diff;
     motor->measure.last_single_round_angle = current_angle;
     motor->base.measure.torque_nm          = motor->measure.torque;
+    /* 只有收到完整有效反馈后，底层 raw/角度限位才允许参与判定。 */
+    motor->base.feedback_valid = 1U;
 
     Module_Offline_device_update(motor->base.offline_dev);
 }

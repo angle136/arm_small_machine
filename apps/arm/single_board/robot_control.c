@@ -171,7 +171,7 @@ void arm_feedback_snapshot_update(void)
             &g_arm_feedback_snapshot.joint[g_dm_snapshot_index[i]];
         Can_Device *can_dev = (Can_Device *)motor->base.transport_dev;
 
-        feedback->valid          = (motor->measure.id != 0U);
+        feedback->valid          = motor->base.feedback_valid;
         feedback->online         = (Module_Offline_get_device_status(motor->base.offline_dev) == STATE_ONLINE);
         feedback->enabled        = motor->base.setting.enableflag;
         feedback->feedback_id    = motor->measure.id;
@@ -194,7 +194,7 @@ void arm_feedback_snapshot_update(void)
         Can_Device *can_dev = (Can_Device *)g_j4_motor->base.transport_dev;
 
         feedback->online         = (Module_Offline_get_device_status(g_j4_motor->base.offline_dev) == STATE_ONLINE);
-        feedback->valid          = (g_j4_motor->measure.ecd != 0U) || feedback->online;
+        feedback->valid          = g_j4_motor->base.feedback_valid;
         feedback->enabled        = g_j4_motor->base.setting.enableflag;
         feedback->feedback_id    = 0U;
         feedback->tx_id          = (can_dev != NULL) ? can_dev->tx_id : 0U;

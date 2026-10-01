@@ -93,6 +93,8 @@ static void dji_can_rx_callback(Can_Device *dev, const uint8_t *data, uint8_t le
     motor->base.measure.total_angle = (float)motor->measure.total_round * (2.0f * PI) + motor->base.measure.single_round_angle;
 
     motor->base.measure.torque_nm = motor->base.controller.output_torque;
+    /* 只有收到完整有效反馈后，底层 raw/角度限位才允许参与判定。 */
+    motor->base.feedback_valid = 1U;
 
     /* 更新在线状态 */
     Module_Offline_device_update(motor->base.offline_dev);
