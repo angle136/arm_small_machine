@@ -30,6 +30,9 @@ struct Offline_Device
 
 static Offline_Device            *g_device_list;                         /* 设备链表头 */
 static volatile bool              g_silent_error;                        /* 静音报警标志  */
+static volatile bool              g_fatal_fault;                         /* 系统级致命故障报警锁存标志 */
+static char                       g_fatal_source[32];                    /* 致命故障来源 */
+static char                       g_fatal_reason[64];                    /* 致命故障原因 */
 static bool                       g_initialized;                         /* 模块初始化完成标志*/
 static TX_THREAD                  g_task_thread;                         /* 检测任务句柄 */
 APPS_STACK_SECTION static uint8_t g_task_stack[OFFLINE_TASK_STACK_SIZE]; /* 检测任务栈*/
@@ -54,6 +57,18 @@ static void offline_detect_task_entry(ULONG arg)
 #endif
 #endif
         if (!g_initialized) break;
+
+        if (g_fatal_fault)
+        {
+            BSP_LED_Show(LED_Red);
+#if OFFLINE_BEEP_ENABLE
+            BSP_BEEP_Set(OFFLINE_BEEP_TUNE_VALUE, OFFLINE_BEEP_CTRL_VALUE);
+#else
+            BSP_BEEP_Set(0, 0);
+#endif
+            tx_thread_sleep(10);
+            continue;
+        }
 
         /* 遍历设备链表, 聚合离线状态 */
         uint32_t now                = (uint32_t)BSP_DWT_GetTimeline_ms();
@@ -174,6 +189,9 @@ void Module_Offline_init(void)
 
     g_device_list  = NULL;
     g_silent_error = false;
+    g_fatal_fault  = false;
+    memset(g_fatal_source, 0, sizeof(g_fatal_source));
+    memset(g_fatal_reason, 0, sizeof(g_fatal_reason));
 
     BSP_BEEP_Start();
     BSP_LED_Show(LED_Green);
@@ -258,4 +276,43 @@ uint8_t Module_Offline_get_device_status(Offline_Device *dev)
 {
     if (dev == NULL) return STATE_OFFLINE;
     return dev->is_offline ? STATE_OFFLINE : STATE_ONLINE;
+}
+
+/**
+ * @brief 设置系统级致命故障报警。
+ *
+ * @param source 输入，故障来源名称，可为 NULL。
+ * @param reason 输入，故障原因描述，可为 NULL。
+ *
+ * @retval 无。
+ *
+ * @note 调用关系：由电机底层安全限位等模块调用；本函数只锁存报警信息并打印日志。
+ * @note 安全策略：Offline 线程检测到 g_fatal_fault 后持续红灯和蜂鸣；本函数不停止喂狗。
+ */
+void Module_Offline_SetFatalFault(const char *source, const char *reason)
+{
+    if (source == NULL) source = "unknown";
+    if (reason == NULL) reason = "fatal fault";
+
+    if (!g_fatal_fault)
+    {
+        strncpy(g_fatal_source, source, sizeof(g_fatal_source) - 1);
+        g_fatal_source[sizeof(g_fatal_source) - 1] = '\0';
+        strncpy(g_fatal_reason, reason, sizeof(g_fatal_reason) - 1);
+        g_fatal_reason[sizeof(g_fatal_reason) - 1] = '\0';
+        g_fatal_fault = true;
+        LOG_E("fatal fault latched: source=%s reason=%s", g_fatal_source, g_fatal_reason);
+    }
+}
+
+/**
+ * @brief 查询系统级致命故障报警是否已经锁存。
+ *
+ * @param 无。
+ *
+ * @return bool 返回 true 表示存在致命故障报警；返回 false 表示无致命故障报警。
+ */
+bool Module_Offline_HasFatalFault(void)
+{
+    return g_fatal_fault;
 }

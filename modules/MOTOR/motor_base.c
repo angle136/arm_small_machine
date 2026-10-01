@@ -3,9 +3,126 @@
 #include "bsp_dwt.h"
 #include "motor_algorithm.h"
 
+#define LOG_TAG "motor_base"
+#define LOG_LVL LOG_LVL_INFO
+#include "ulog_def.h"
+
 #define MOTOR_CAN_SLOT_GAP_S 0.0002f
 
 static Motor_Base *g_motor_list = NULL;
+static volatile uint8_t g_motor_safety_fault = 0U;
+
+/**
+ * @brief 清零单个电机的控制输出和积分状态。
+ *
+ * @param motor 输入，需要清零的电机基类指针。
+ *
+ * @retval 无。
+ *
+ * @note 调用关系：由 Motor_ControlAll()、motor_emergency_stop_all() 和安全故障路径调用。
+ */
+static void motor_clear_output(Motor_Base *motor)
+{
+    if (motor == NULL) return;
+
+    motor->controller.output           = 0.0f;
+    motor->controller.output_torque    = 0.0f;
+    motor->controller.feedforward_torque = 0.0f;
+    motor->controller.speed_PID.Output = 0.0f;
+    motor->controller.speed_PID.Iout   = 0.0f;
+    motor->controller.angle_PID.Output = 0.0f;
+    motor->controller.angle_PID.Iout   = 0.0f;
+}
+
+/**
+ * @brief 急停并失能全部已注册电机。
+ *
+ * @param fault_motor 输入，触发故障的电机，可为 NULL。
+ * @param reason      输入，故障原因字符串。
+ *
+ * @retval 无。
+ *
+ * @note 调用关系：由 motor_safety_check() 在底层限位触发时调用。
+ * @note 安全策略：锁存全局安全故障，清零全部输出，置全部 enableflag=0，并交给 Offline 模块统一蜂鸣报警。
+ */
+static void motor_emergency_stop_all(Motor_Base *fault_motor, const char *reason)
+{
+    const char *name = (fault_motor != NULL && fault_motor->name != NULL) ? fault_motor->name : "unknown_motor";
+    if (reason == NULL) reason = "motor safety fault";
+
+    if (g_motor_safety_fault == 0U)
+    {
+        LOG_E("MOTOR SAFETY FAULT: motor=%s reason=%s", name, reason);
+        Module_Offline_SetFatalFault(name, reason);
+    }
+    g_motor_safety_fault = 1U;
+
+    for (Motor_Base *motor = g_motor_list; motor; motor = motor->next)
+    {
+        motor->setting.enableflag = 0U;
+        motor_clear_output(motor);
+    }
+}
+
+/**
+ * @brief 检查单个电机是否处于配置的底层安全限位内。
+ *
+ * @param motor 输入，需要检查的电机基类指针。
+ *
+ * @return uint8_t 返回 1 表示允许继续 Apply；返回 0 表示电机指针无效。
+ *
+ * @note 调用关系：由 Motor_ApplyAll() 在调用具体驱动 Apply() 前执行，是下发 CAN/PWM/UART 前的最终安全闸门。
+ */
+static uint8_t motor_safety_check(Motor_Base *motor)
+{
+    if (motor == NULL) return 0U;
+    if (g_motor_safety_fault != 0U)
+    {
+        motor->setting.enableflag = 0U;
+        motor_clear_output(motor);
+        return 1U;
+    }
+
+    if (motor->safety.enable == 0U) return 1U;
+
+    if (motor->offline_dev != NULL && Module_Offline_get_device_status(motor->offline_dev) == STATE_OFFLINE)
+    {
+        return 1U;
+    }
+
+    if (motor->safety.use_raw_position != 0U && motor->GetRawPosition != NULL)
+    {
+        int32_t raw = motor->GetRawPosition(motor);
+        if (raw < motor->safety.raw_min || raw > motor->safety.raw_max)
+        {
+            LOG_E("MOTOR LIMIT RAW: motor=%s raw=%ld limit=[%ld,%ld] angle=%.3f",
+                  motor->name ? motor->name : "unknown_motor",
+                  (long)raw,
+                  (long)motor->safety.raw_min,
+                  (long)motor->safety.raw_max,
+                  motor->measure.total_angle);
+            motor_emergency_stop_all(motor, "raw position limit");
+            return 1U;
+        }
+    }
+
+    if (motor->safety.use_angle != 0U)
+    {
+        float angle = motor->measure.total_angle;
+        if (angle < motor->safety.angle_min_rad || angle > motor->safety.angle_max_rad)
+        {
+            LOG_E("MOTOR LIMIT ANGLE: motor=%s angle=%.3f limit=[%.3f,%.3f]",
+                  motor->name ? motor->name : "unknown_motor",
+                  angle,
+                  motor->safety.angle_min_rad,
+                  motor->safety.angle_max_rad);
+            motor_emergency_stop_all(motor, "angle limit");
+            return 1U;
+        }
+    }
+
+    return 1U;
+}
 
 /**
  * @brief 判断电机是否属于指定 CAN 总线分组。
@@ -90,12 +207,7 @@ void Motor_ControlAll(void)
 
         if (offline || motor->setting.enableflag == 0)
         {
-            motor->controller.output           = 0;
-            motor->controller.output_torque    = 0;
-            motor->controller.speed_PID.Output = 0;
-            motor->controller.speed_PID.Iout   = 0;
-            motor->controller.angle_PID.Output = 0;
-            motor->controller.angle_PID.Iout   = 0;
+            motor_clear_output(motor);
             continue;
         }
 
@@ -134,7 +246,7 @@ void Motor_ApplyAll(void)
             Motor_Base *motor = motor_find_next_can(can_cursor[bus_index], bus_index);
             if (motor != NULL)
             {
-                if (motor->Apply != NULL) motor->Apply(motor);
+                if (motor_safety_check(motor) && motor->Apply != NULL) motor->Apply(motor);
                 can_cursor[bus_index] = motor->next;
                 sent_in_slot          = 1U;
             }
@@ -148,29 +260,71 @@ void Motor_ApplyAll(void)
     {
         if (motor->transport != MOTOR_TRANSPORT_CAN && motor->Apply != NULL)
         {
-            motor->Apply(motor);
+            if (motor_safety_check(motor)) motor->Apply(motor);
         }
     }
 }
 
+/**
+ * @brief 使能单个电机。
+ *
+ * @param m 输入，需要使能的电机基类指针。
+ *
+ * @retval 无。
+ *
+ * @note 调用关系：由 APP 或上层控制逻辑调用。
+ * @note 安全策略：如果底层安全限位已经触发锁死，本函数拒绝重新置 enableflag=1。
+ */
 void Motor_Start(Motor_Base *m)
 {
     if (m == NULL) return;
+    if (g_motor_safety_fault != 0U)
+    {
+        LOG_E("reject Motor_Start after safety fault: motor=%s", m->name ? m->name : "unknown_motor");
+        m->setting.enableflag = 0U;
+        return;
+    }
     m->setting.enableflag = 1;
 }
 
+/**
+ * @brief 停止并失能单个电机。
+ *
+ * @param m 输入，需要失能的电机基类指针。
+ *
+ * @retval 无。
+ *
+ * @note 调用关系：由 APP 或安全逻辑调用；真正零输出报文由后续 Motor_ApplyAll() 调用具体驱动 Apply() 完成。
+ */
 void Motor_Stop(Motor_Base *m)
 {
     if (m == NULL) return;
     m->setting.enableflag = 0;
 }
 
+/**
+ * @brief 设置电机控制参考值。
+ *
+ * @param m   输入，需要设置参考值的电机基类指针。
+ * @param ref 输入，参考值，单位由当前控制模式决定。
+ *
+ * @retval 无。
+ */
 void Motor_SetRef(Motor_Base *m, float ref)
 {
     if (m == NULL) return;
     m->controller.ref = ref;
 }
 
+/**
+ * @brief 修改电机闭环反馈来源。
+ *
+ * @param m               输入，需要修改反馈源的电机基类指针。
+ * @param loop            输入，指定角度环或速度环。
+ * @param feedback_source 输入，反馈来源编号。
+ *
+ * @retval 无。
+ */
 void Motor_ChangeFeed(Motor_Base *m, Closeloop_Type_e loop, uint8_t feedback_source)
 {
     if (m == NULL) return;
@@ -180,20 +334,63 @@ void Motor_ChangeFeed(Motor_Base *m, Closeloop_Type_e loop, uint8_t feedback_sou
         m->setting.speed_feedback_source = feedback_source;
 }
 
+/**
+ * @brief 设置电机外环控制模式。
+ *
+ * @param m          输入，需要设置外环模式的电机基类指针。
+ * @param outer_loop 输入，目标闭环类型。
+ *
+ * @retval 无。
+ */
 void Motor_OuterLoop(Motor_Base *m, Closeloop_Type_e outer_loop)
 {
     if (m == NULL) return;
     m->setting.loop_type = outer_loop;
 }
 
+/**
+ * @brief 设置电机前馈力矩。
+ *
+ * @param m      输入，需要设置前馈的电机基类指针。
+ * @param torque 输入，前馈力矩，单位 N·m。
+ *
+ * @retval 无。
+ */
 void Motor_SetForwardTorque(Motor_Base *m, float torque)
 {
     if (m == NULL) return;
     m->controller.feedforward_torque = torque;
 }
 
+/**
+ * @brief 设置电机输出力矩。
+ *
+ * @param m      输入，需要设置输出力矩的电机基类指针。
+ * @param torque 输入，输出力矩，单位 N·m。
+ *
+ * @retval 无。
+ *
+ * @note 安全策略：如果底层安全限位已经触发锁死，本函数只清零输出，不再接受新的力矩值。
+ */
 void Motor_SetOutputTorque(Motor_Base *m, float torque)
 {
     if (m == NULL) return;
+    if (g_motor_safety_fault != 0U)
+    {
+        motor_clear_output(m);
+        return;
+    }
     m->controller.output_torque = torque;
+}
+
+/**
+ * @brief 查询电机底层安全故障锁死状态。
+ *
+ * @param 无。
+ *
+ * @return uint8_t 返回 1 表示已触发安全故障，返回 0 表示未触发。
+ */
+uint8_t Motor_SafetyFaultActive(void)
+{
+    return g_motor_safety_fault;
 }

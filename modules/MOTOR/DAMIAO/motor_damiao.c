@@ -49,6 +49,7 @@ static void dm_can_rx_callback(Can_Device *dev, const uint8_t *data, uint8_t len
 
     uint16_t tmp;
     tmp                                    = (uint16_t)((data[1] << 8) | data[2]);
+    motor->measure.raw_position           = tmp;
     motor->base.measure.single_round_angle = uint_to_float(tmp, param->p_min, param->p_max, 16);
     tmp                                    = (uint16_t)((data[3] << 4) | data[4] >> 4);
     motor->base.measure.speed_rad          = uint_to_float(tmp, param->v_min, param->v_max, 12);
@@ -77,6 +78,21 @@ static void dm_can_rx_callback(Can_Device *dev, const uint8_t *data, uint8_t len
     motor->base.measure.torque_nm          = motor->measure.torque;
 
     Module_Offline_device_update(motor->base.offline_dev);
+}
+
+/**
+ * @brief 读取达妙电机原始位置反馈。
+ *
+ * @param base 输入，电机基类指针，函数内部转换为 DM_Motor_t。
+ *
+ * @return int32_t 返回最近一次反馈报文中的 16bit 原始位置值。
+ *
+ * @note 调用关系：由 Motor_ApplyAll() 的底层安全限位检查调用；本函数不访问外设、不发送 CAN。
+ */
+static int32_t dm_get_raw_position(Motor_Base *base)
+{
+    DM_Motor_t *motor = MOTOR_GET_DERIVED(base, DM_Motor_t);
+    return (motor != NULL) ? (int32_t)motor->measure.raw_position : 0;
 }
 
 /**
@@ -355,6 +371,8 @@ DM_Motor_t *Motor_DM_Init(Motor_Init_Config_s *config, uint32_t DM_Mode_type)
     motor->base.transport = MOTOR_TRANSPORT_CAN;
     motor->base.info      = config->motor_init_info;
     motor->base.setting   = config->setting_init_config;
+    motor->base.safety    = config->safety_limit_config;
+    motor->base.name      = config->offline_init_config.name;
     motor->mode_type      = DM_Mode_type;
     motor->params         = dm_get_params(config->motor_init_info.motor_type);
 
@@ -408,7 +426,8 @@ DM_Motor_t *Motor_DM_Init(Motor_Init_Config_s *config, uint32_t DM_Mode_type)
     Motor_DM_Cmd(motor, DM_CMD_MOTOR_START);
 
     /* 注册到全局链表 */
-    motor->base.Apply   = dm_apply;
+    motor->base.GetRawPosition = dm_get_raw_position;
+    motor->base.Apply          = dm_apply;
     Motor_Register(&motor->base);
 
     LOG_I("DM motor initialized (type=%d, mode=0x%03X)", motor->base.info.motor_type, DM_Mode_type);

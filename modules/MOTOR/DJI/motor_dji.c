@@ -98,6 +98,21 @@ static void dji_can_rx_callback(Can_Device *dev, const uint8_t *data, uint8_t le
     Module_Offline_device_update(motor->base.offline_dev);
 }
 
+/**
+ * @brief 读取 DJI/GM6020 电机原始位置反馈。
+ *
+ * @param base 输入，电机基类指针，函数内部转换为 DJI_Motor_t。
+ *
+ * @return int32_t 返回最近一次反馈报文中的 ecd 原始值，范围通常为 0~8191。
+ *
+ * @note 调用关系：由 Motor_ApplyAll() 的底层安全限位检查调用；本函数不访问外设、不发送 CAN。
+ */
+static int32_t dji_get_raw_position(Motor_Base *base)
+{
+    DJI_Motor_t *motor = MOTOR_GET_DERIVED(base, DJI_Motor_t);
+    return (motor != NULL) ? (int32_t)motor->measure.ecd : 0;
+}
+
 static void dji_apply(Motor_Base *base)
 {
     DJI_Motor_t *motor   = MOTOR_GET_DERIVED(base, DJI_Motor_t);
@@ -279,6 +294,8 @@ DJI_Motor_t *Motor_DJI_Init(Motor_Init_Config_s *config)
     motor->base.transport = MOTOR_TRANSPORT_CAN;
     motor->base.info      = config->motor_init_info;
     motor->base.setting   = config->setting_init_config;
+    motor->base.safety    = config->safety_limit_config;
+    motor->base.name      = config->offline_init_config.name;
 
     /* 电机分组 (同时计算 rx_id) */
     if (MotorSenderGrouping(motor, &config->transport_config.can) != TX_SUCCESS)
@@ -322,7 +339,8 @@ DJI_Motor_t *Motor_DJI_Init(Motor_Init_Config_s *config)
     motor->base.offline_dev = Module_Offline_register(&config->offline_init_config);
 
     /* 绑定两阶段调度, 注册到全局链表 */
-    motor->base.Apply = dji_apply;
+    motor->base.GetRawPosition = dji_get_raw_position;
+    motor->base.Apply          = dji_apply;
     Motor_Register(&motor->base);
 
     LOG_I("DJI motor initialized (type=%d, tx_id=%d, rx_id=%d)", motor->base.info.motor_type, config->transport_config.can.tx_id,

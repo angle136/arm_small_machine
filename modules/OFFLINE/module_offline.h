@@ -86,4 +86,26 @@ void Module_Offline_device_disable(Offline_Device *dev);
  */
 uint8_t Module_Offline_get_device_status(Offline_Device *dev);
 
+/**
+ * @brief 设置系统级致命故障报警。
+ *
+ * @param source 输入，故障来源名称，可为 NULL。
+ * @param reason 输入，故障原因描述，可为 NULL。
+ *
+ * @retval 无。
+ *
+ * @note 调用关系：供电机底层安全限位等模块调用；Offline 线程统一接管蜂鸣器和红灯报警。
+ * @note 本接口只负责报警锁存，不停止喂狗、不触发复位。
+ */
+void Module_Offline_SetFatalFault(const char *source, const char *reason);
+
+/**
+ * @brief 查询系统级致命故障报警是否已经锁存。
+ *
+ * @param 无。
+ *
+ * @return bool 返回 true 表示存在致命故障报警；返回 false 表示无致命故障报警。
+ */
+bool Module_Offline_HasFatalFault(void);
+
 #endif // _OFFLINE_H_

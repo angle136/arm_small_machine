@@ -22,7 +22,20 @@ typedef struct
     uint32_t tx_id;
     uint32_t rx_id;
     Motor_Type_e type;
+    Motor_Safety_Limit_s safety;
 } Arm_Dm_Descriptor;
+
+#define ARM_RAW_LIMIT_CONFIG(enable_, min_, max_) \
+    {                                             \
+        .enable           = (enable_),            \
+        .use_raw_position = 1U,                   \
+        .use_angle        = 0U,                   \
+        .fatal_on_limit   = 1U,                   \
+        .raw_min          = (min_),               \
+        .raw_max          = (max_),               \
+        .angle_min_rad    = 0.0f,                 \
+        .angle_max_rad    = 0.0f,                 \
+    }
 
 static DM_Motor_t *g_dm_motors[6];
 static DJI_Motor_t *g_j4_motor;
@@ -34,26 +47,6 @@ APPS_STACK_SECTION static uint8_t g_arm_status_stack[1536];
 APPS_STACK_SECTION static uint8_t g_arm_feedback_stack[1024];
 
 volatile Arm_Feedback_Snapshot_t g_arm_feedback_snapshot;
-
-/**
- * @brief 将达妙电机角度反馈换算为便于调试观察的 16 位原始位置值。
- *
- * @param motor 输入，达妙电机对象指针；函数读取其型号参数和单圈角度反馈。
- *
- * @return uint16_t 0~65535 的归一化位置编码；电机指针或参数为空时返回 0。
- *
- * @note 调用关系：由 arm_feedback_snapshot_update() 调用；本函数只做数值换算，不访问外设、不发送 CAN。
- */
-static uint16_t arm_dm_raw_position(const DM_Motor_t *motor)
-{
-    if (motor == NULL || motor->params == NULL) return 0;
-
-    float normalized = (motor->base.measure.single_round_angle - motor->params->p_min) /
-                       (motor->params->p_max - motor->params->p_min);
-    if (normalized <= 0.0f) return 0;
-    if (normalized >= 1.0f) return UINT16_MAX;
-    return (uint16_t)(normalized * 65535.0f + 0.5f);
-}
 
 /**
  * @brief 根据机械臂达妙关节描述生成通用电机初始化配置。
@@ -82,6 +75,7 @@ static Motor_Init_Config_s arm_dm_config(const Arm_Dm_Descriptor *desc)
     config.motor_init_info.motor_type = desc->type;
     config.motor_init_info.gear_ratio = 1.0f;
     config.motor_init_info.max_torque = 0.0f;
+    config.safety_limit_config = desc->safety;
 
     return config;
 }
@@ -142,6 +136,8 @@ static void arm_register_j4(void)
     config.motor_init_info.gear_ratio = 1.0f;
     config.motor_init_info.torque_constant = 0.741f;
     config.motor_init_info.max_torque = 0.0f;
+    config.safety_limit_config =
+        (Motor_Safety_Limit_s)ARM_RAW_LIMIT_CONFIG(ARM_J4_LIMIT_ENABLE, ARM_J4_RAW_MIN, ARM_J4_RAW_MAX);
 
     g_j4_motor = Motor_DJI_Init(&config);
     if (g_j4_motor == NULL)
@@ -181,7 +177,7 @@ void arm_feedback_snapshot_update(void)
         feedback->feedback_id    = motor->measure.id;
         feedback->tx_id          = (can_dev != NULL) ? can_dev->tx_id : 0U;
         feedback->rx_id          = (can_dev != NULL) ? can_dev->rx_id : 0U;
-        feedback->raw_position   = arm_dm_raw_position(motor);
+        feedback->raw_position   = motor->measure.raw_position;
         feedback->raw_speed      = 0;
         feedback->raw_current    = 0;
         feedback->angle_raw_rad  = motor->base.measure.single_round_angle;
@@ -322,12 +318,18 @@ static void arm_feedback_task(ULONG thread_input)
 void robot_control_init(void)
 {
     static const Arm_Dm_Descriptor dm_descriptors[] = {
-        {"J1_DM6220", BSP_CAN_HANDLE2, ARM_J1_DM_TX_ID, ARM_J1_DM_RX_ID, DM6220},
-        {"J2_DM4340", BSP_CAN_HANDLE2, ARM_J2_DM_TX_ID, ARM_J2_DM_RX_ID, DM4340},
-        {"J3_DM4310", BSP_CAN_HANDLE2, ARM_J3_DM_TX_ID, ARM_J3_DM_RX_ID, DM4310},
-        {"J5_DM4310", BSP_CAN_HANDLE1, ARM_J5_DM_TX_ID, ARM_J5_DM_RX_ID, DM4310},
-        {"J6_DM3507", BSP_CAN_HANDLE1, ARM_J6_DM_TX_ID, ARM_J6_DM_RX_ID, DM3507},
-        {"J7_DM3507", BSP_CAN_HANDLE1, ARM_J7_DM_TX_ID, ARM_J7_DM_RX_ID, DM3507},
+        {"J1_DM6220", BSP_CAN_HANDLE2, ARM_J1_DM_TX_ID, ARM_J1_DM_RX_ID, DM6220,
+         ARM_RAW_LIMIT_CONFIG(ARM_J1_LIMIT_ENABLE, ARM_J1_RAW_MIN, ARM_J1_RAW_MAX)},
+        {"J2_DM4340", BSP_CAN_HANDLE2, ARM_J2_DM_TX_ID, ARM_J2_DM_RX_ID, DM4340,
+         ARM_RAW_LIMIT_CONFIG(ARM_J2_LIMIT_ENABLE, ARM_J2_RAW_MIN, ARM_J2_RAW_MAX)},
+        {"J3_DM4310", BSP_CAN_HANDLE2, ARM_J3_DM_TX_ID, ARM_J3_DM_RX_ID, DM4310,
+         ARM_RAW_LIMIT_CONFIG(ARM_J3_LIMIT_ENABLE, ARM_J3_RAW_MIN, ARM_J3_RAW_MAX)},
+        {"J5_DM4310", BSP_CAN_HANDLE1, ARM_J5_DM_TX_ID, ARM_J5_DM_RX_ID, DM4310,
+         ARM_RAW_LIMIT_CONFIG(ARM_J5_LIMIT_ENABLE, ARM_J5_RAW_MIN, ARM_J5_RAW_MAX)},
+        {"J6_DM3507", BSP_CAN_HANDLE1, ARM_J6_DM_TX_ID, ARM_J6_DM_RX_ID, DM3507,
+         ARM_RAW_LIMIT_CONFIG(ARM_J6_LIMIT_ENABLE, ARM_J6_RAW_MIN, ARM_J6_RAW_MAX)},
+        {"J7_DM3507", BSP_CAN_HANDLE1, ARM_J7_DM_TX_ID, ARM_J7_DM_RX_ID, DM3507,
+         ARM_RAW_LIMIT_CONFIG(ARM_J7_LIMIT_ENABLE, ARM_J7_RAW_MIN, ARM_J7_RAW_MAX)},
     };
 
     /* BSP_Init starts clocks and GPIO; CAN tasking must precede device registration. */

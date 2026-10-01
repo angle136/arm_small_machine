@@ -95,6 +95,18 @@
 | `.vscode/tasks.json` | 将默认 `Build selected board`、`Build dji_c`、`Build damiao_h7` 构建任务从 `type: shell` 改为 `type: process`；Windows 下直接启动 `powershell`，避免 VSCode 外层 PowerShell 再套一层内部 PowerShell；三个构建任务均显式传入 `-DROBOT=arm -DBOARD=single`。 | 修复快捷键构建时 `$board='dji_c'` 被外层引号吃掉、变成 `$board= dji_c` 的错误，同时避免 `cmake` 去错误读取 `board/CMakePresets.json`；保证手动选择任意板子时仍编译机械臂 APP。 | `tasks.json` 通过 `ConvertFrom-Json` 校验；按任务等价命令执行 `dji_c` 构建通过，输出 `Robot: arm`、`Board: single`，`ninja: no work to do`。 |
 | `modules/MOTOR/DAMIAO/motor_damiao.c` | 对 DM4340 参数来源补充说明：位置 ±12.5 rad、速度 ±10 rad/s、力矩 ±28 N·m 参照旧机械臂工程；Kp/Kd 下限保留 0。 | 新建 4340 型号时匹配旧工程实际量程；同时保留旧工程 `DM_4340_cmd()` 只发力矩、位置/速度/Kp/Kd 原始字节为 0 的行为，避免 Kp=0/Kd=0 被负下限量程错误编码成非零原始值。 | 主工作区 `dji_c/arm` 构建通过。 |
 
+## 2026-10-01：电机底层安全限位和致命故障蜂鸣
+
+### 本轮主动修改
+
+| 文件 | 修改内容 | 目的 | 验证 |
+| --- | --- | --- | --- |
+| `modules/MOTOR/motor_def.h` | 新增 `Motor_Safety_Limit_s`，并在 `Motor_Init_Config_s` 中加入 `safety_limit_config`。 | 让各 APP 在注册电机时传入 raw/角度限位参数，但限位检查逻辑留在电机底层。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
+| `modules/MOTOR/motor_base.h` / `modules/MOTOR/motor_base.c` | 在 `Motor_Base` 中保存安全限位、名称和原始位置读取回调；`Motor_ApplyAll()` 在调用驱动 `Apply()` 前执行底层限位检查；超限后锁存全局安全故障、失能全部电机、清零输出/PID 积分，并拒绝后续 `Motor_Start()` 重新使能。 | 保证不管上层如何调用 start/set/output，真正下发前都必须经过底层安全闸门；任一电机超限即全局急停。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
+| `modules/MOTOR/DAMIAO/motor_damiao.h` / `modules/MOTOR/DAMIAO/motor_damiao.c` | 达妙反馈结构保存反馈包 16bit 原始位置值；初始化时接入安全限位配置和 raw 读取回调。 | 让达妙关节可直接使用实测 raw 值做底层限位，避免用角度反推造成调试偏差。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
+| `modules/MOTOR/DJI/motor_dji.c` | GM6020/DJI 初始化时接入安全限位配置和 raw 读取回调，raw 值使用 `ecd`。 | 让 J4 GM6020 可使用 0~8191 编码器原始值做底层限位。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
+| `modules/OFFLINE/module_offline.h` / `modules/OFFLINE/module_offline.c` | 新增 `Module_Offline_SetFatalFault()` 和 `Module_Offline_HasFatalFault()`；Offline 线程在 fatal fault 锁存后统一持续红灯和蜂鸣。 | 使用统一系统报警模块处理蜂鸣，避免电机底层直接操作蜂鸣器；本次不改变看门狗喂狗/复位逻辑。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
+
 ## 后续记录格式
 
 后续每次发生 App 层外修改时，在本文件末尾新增日期、提交、文件、目的、验证和来源；如果只修改 `apps/`，在交付说明中注明“无 App 层外修改”。

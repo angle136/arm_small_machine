@@ -112,6 +112,19 @@ typedef struct
     float torque_nm;          /* 当前力矩 (Nm)  */
 } Motor_Measure_s;
 
+/* 电机底层安全限位配置 */
+typedef struct
+{
+    uint8_t enable;           /* 0=不启用限位, 1=启用限位 */
+    uint8_t use_raw_position; /* 1=使用原始位置限位 */
+    uint8_t use_angle;        /* 1=使用 total_angle(rad) 限位 */
+    uint8_t fatal_on_limit;   /* 1=触发后锁死全部电机 */
+    int32_t raw_min;          /* 原始位置下限 */
+    int32_t raw_max;          /* 原始位置上限 */
+    float   angle_min_rad;    /* 角度下限(rad) */
+    float   angle_max_rad;    /* 角度上限(rad) */
+} Motor_Safety_Limit_s;
+
 /* 控制器初始化配置 */
 typedef struct
 {
@@ -135,6 +148,7 @@ typedef struct
     Motor_Controller_Init_s controller_init_config;
     Motor_Setting_s         setting_init_config;
     Motor_Info_s            motor_init_info;
+    Motor_Safety_Limit_s    safety_limit_config;
     Offline_Init_config_t   offline_init_config;
 
     Motor_Transport_e transport;

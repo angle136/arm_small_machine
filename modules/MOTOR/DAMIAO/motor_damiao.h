@@ -59,6 +59,7 @@ typedef struct
 {
     uint8_t        id;                      /* 电机ID */
     uint8_t        state;                   /* 电机状态 */
+    uint16_t       raw_position;            /* 反馈报文中的 16bit 原始位置值 */
     float          last_single_round_angle; /* 上一次单圈角度(rad) */
     float          torque;                  /* 输出力矩(Nm) */
     float          T_Mos;                   /* MOS 温度 (℃) */

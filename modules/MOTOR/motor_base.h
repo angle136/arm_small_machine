@@ -23,9 +23,14 @@ struct Motor_Base
     Motor_Setting_s    setting;
     Motor_Controller_s controller;
     Motor_Measure_s    measure;
+    Motor_Safety_Limit_s safety;
     Offline_Device    *offline_dev;
+    const char        *name;
 
     void *transport_dev; /* 底层设备句柄 (Can_Device / UART_Device / PWM_Device) */
+
+    /* 原始位置读取接口；由具体电机驱动实现，供底层安全限位使用 */
+    int32_t (*GetRawPosition)(Motor_Base *motor);
 
     /* 输出应用 → 传输层 (协议层实现) */
     void (*Apply)(Motor_Base *motor);
@@ -95,5 +100,16 @@ void Motor_SetForwardTorque(Motor_Base *motor, float torque);
  * @brief 设置电机输出扭矩
  */
 void Motor_SetOutputTorque(Motor_Base *motor, float torque);
+
+/**
+ * @brief 查询电机底层安全故障锁死状态。
+ *
+ * @param 无。
+ *
+ * @return uint8_t 返回 1 表示已触发安全故障，返回 0 表示未触发。
+ *
+ * @note 调用关系：供 APP 或调试代码只读查询；故障触发后不在运行期自动清除。
+ */
+uint8_t Motor_SafetyFaultActive(void);
 
 #endif /* _MOTOR_BASE_H_ */
