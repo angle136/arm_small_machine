@@ -113,4 +113,18 @@ void Motor_SetOutputTorque(Motor_Base *motor, float torque);
  */
 uint8_t Motor_SafetyFaultActive(void);
 
+/**
+ * @brief 执行单台电机的最终发送前安全校验。
+ *
+ * @param motor 输入，需要执行最终校验的电机基类指针。
+ *
+ * @return uint8_t 返回 1 表示允许当前电机继续执行 Apply；返回 0 表示本台电机已被安全失能，
+ *                 驱动层应立即走零输出分支。
+ *
+ * @note 调用关系：由具体电机驱动的 Apply() 入口调用，位置应在调用 MIT/位置/速度/电流
+ *       协议编码函数之前。全局预扫描仍由 Motor_ApplyAll() 负责。
+ * @note 安全策略：本接口只处理当前电机的最终拦截，不替代全局预扫描；下一周期预扫描仍会负责全局急停。
+ */
+uint8_t Motor_SafetyCheckBeforeApply(Motor_Base *motor);
+
 #endif /* _MOTOR_BASE_H_ */

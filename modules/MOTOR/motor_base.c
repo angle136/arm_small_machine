@@ -139,6 +139,40 @@ static uint8_t motor_safety_check(Motor_Base *motor)
 }
 
 /**
+ * @brief 判断单台电机当前反馈是否仍在安全限位内。
+ *
+ * @param motor 输入，需要检查的电机基类指针。
+ *
+ * @return uint8_t 返回 1 表示位置有效或未启用限位；返回 0 表示已超限。
+ *
+ * @note 调用关系：由全局限位检查和具体驱动 Apply() 的最终校验共同调用。
+ * @note 本函数只读取状态，不修改 enableflag、不触发报警，便于在发送前重复检查。
+ */
+static uint8_t motor_limit_is_safe(const Motor_Base *motor)
+{
+    if (motor == NULL || motor->safety.enable == 0U) return 1U;
+    if (motor->feedback_valid == 0U) return 1U;
+    if (motor->offline_dev != NULL && Module_Offline_get_device_status(motor->offline_dev) == STATE_OFFLINE) return 1U;
+
+    if (motor->safety.use_raw_position != 0U && motor->GetRawPosition != NULL)
+    {
+        int32_t raw = motor->GetRawPosition((Motor_Base *)motor);
+        uint8_t raw_in_range = (motor->safety.raw_min <= motor->safety.raw_max)
+                                   ? (raw >= motor->safety.raw_min && raw <= motor->safety.raw_max)
+                                   : (raw >= motor->safety.raw_min || raw <= motor->safety.raw_max);
+        if (raw_in_range == 0U) return 0U;
+    }
+
+    if (motor->safety.use_angle != 0U)
+    {
+        float angle = motor->measure.total_angle;
+        if (angle < motor->safety.angle_min_rad || angle > motor->safety.angle_max_rad) return 0U;
+    }
+
+    return 1U;
+}
+
+/**
  * @brief 判断电机是否属于指定 CAN 总线分组。
  *
  * @param motor     输入，电机基类指针。
@@ -323,6 +357,43 @@ void Motor_Stop(Motor_Base *m)
 {
     if (m == NULL) return;
     m->setting.enableflag = 0;
+}
+
+/**
+ * @brief 执行单台电机的最终发送前安全校验。
+ *
+ * @param motor 输入，需要执行最终校验的电机基类指针。
+ *
+ * @return uint8_t 返回 1 表示允许当前电机继续执行 Apply；返回 0 表示本台电机已被安全失能。
+ *
+ * @note 调用关系：由具体电机驱动 Apply() 入口调用，位于协议编码和 CAN 发送之前。
+ * @note 安全策略：本接口只处理当前电机；发现刚刚越限时清零本台输出并拒绝正常输出，
+ *       下一周期的 Motor_ApplyAll() 全局预扫描仍会负责全局急停。
+ */
+uint8_t Motor_SafetyCheckBeforeApply(Motor_Base *motor)
+{
+    if (motor == NULL) return 0U;
+
+    /* 当前电机本来就失能时，不需要重复做位置拦截。 */
+    if (motor->setting.enableflag == 0U) return 1U;
+
+    /* 已经发生全局安全故障时，本台只允许走驱动层零输出分支。 */
+    if (g_motor_safety_fault != 0U)
+    {
+        motor->setting.enableflag = 0U;
+        motor_clear_output(motor);
+        return 0U;
+    }
+
+    if (motor_limit_is_safe(motor) != 0U) return 1U;
+
+    LOG_E("MOTOR FINAL SAFETY BLOCK: motor=%s raw=%ld angle=%.3f",
+          motor->name ? motor->name : "unknown_motor",
+          (long)((motor->GetRawPosition != NULL) ? motor->GetRawPosition(motor) : 0L),
+          motor->measure.total_angle);
+    motor->setting.enableflag = 0U;
+    motor_clear_output(motor);
+    return 0U;
 }
 
 /**

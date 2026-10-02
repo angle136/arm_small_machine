@@ -119,8 +119,9 @@ static void dji_apply(Motor_Base *base)
 {
     DJI_Motor_t *motor   = MOTOR_GET_DERIVED(base, DJI_Motor_t);
     uint8_t      offline = (base->offline_dev != NULL && Module_Offline_get_device_status(base->offline_dev) == STATE_OFFLINE);
+    uint8_t      safety_ok = Motor_SafetyCheckBeforeApply(base);
 
-    if (offline || base->setting.enableflag == 0)
+    if (offline || base->setting.enableflag == 0 || safety_ok == 0U)
     {
         sender_assignment[motor->sender_group].data[2 * motor->message_num]     = 0;
         sender_assignment[motor->sender_group].data[2 * motor->message_num + 1] = 0;

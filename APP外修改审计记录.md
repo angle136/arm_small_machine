@@ -117,6 +117,16 @@
 | `modules/MOTOR/DAMIAO/motor_damiao.c` | 达妙接收回调在完成反馈解码后置 `base.feedback_valid=1`。 | 明确 raw/角度限位必须基于真实反馈帧，避免未收到反馈时误判。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
 | `modules/MOTOR/DJI/motor_dji.c` | DJI/GM6020 接收回调在完成反馈解码后置 `base.feedback_valid=1`。 | 明确 raw/角度限位必须基于真实反馈帧，避免未收到反馈时误判。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
 
+## 2026-10-02：具体驱动 Apply 入口增加单电机最终安全校验
+
+### 本轮主动修改
+
+| 文件 | 修改内容 | 目的 | 验证 |
+| --- | --- | --- | --- |
+| `modules/MOTOR/motor_base.h` / `modules/MOTOR/motor_base.c` | 新增 `Motor_SafetyCheckBeforeApply()`；在具体驱动真正编码 MIT/位置/速度/电流报文前，重复检查当前电机的反馈限位。若刚刚越限，只失能当前电机、清零当前输出，并返回失败状态。 | 在 `Motor_ApplyAll()` 全局预扫描之外增加单电机最后一道拦截，缩短“预扫描通过到具体电机发送”之间的窗口；保持实现简单，不重复重写各协议编码函数。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
+| `modules/MOTOR/DAMIAO/motor_damiao.c` | `dm_apply()` 入口调用 `Motor_SafetyCheckBeforeApply()`；失败后进入已有零 MIT/位置/速度/PSI 输出分支。 | 保证达妙具体模式发送前，当前电机越限时不再发正常力矩/速度/位置指令。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
+| `modules/MOTOR/DJI/motor_dji.c` | `dji_apply()` 入口调用 `Motor_SafetyCheckBeforeApply()`；失败后进入已有零电流帧分支。 | 保证 GM6020 具体控制帧发送前，当前电机越限时只发零电流，不继续输出正常电流。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
+
 ## 后续记录格式
 
 后续每次发生 App 层外修改时，在本文件末尾新增日期、提交、文件、目的、验证和来源；如果只修改 `apps/`，在交付说明中注明“无 App 层外修改”。
