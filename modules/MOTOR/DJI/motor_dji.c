@@ -83,14 +83,29 @@ static void dji_can_rx_callback(Can_Device *dev, const uint8_t *data, uint8_t le
     motor->measure.real_current            = (int16_t)(data[4] << 8 | data[5]);
     motor->measure.temperature             = data[6];
 
-    /* 多圈角度计算 */
-    int16_t delta_ecd = motor->measure.ecd - motor->measure.last_ecd;
-    if (delta_ecd > 4096)
-        motor->measure.total_round--;
-    else if (delta_ecd < -4096)
-        motor->measure.total_round++;
+    if (motor->base.feedback_valid == 0U)
+    {
+        /*
+         * 首帧只建立 GM6020 多圈累计基线，不根据上电初始值判断跨圈。
+         * 这样 J4 上电时不会因为 ecd 与默认 0 的差值过大而误减/加一圈。
+         */
+        motor->measure.last_ecd       = motor->measure.ecd;
+        motor->measure.total_round   = 0;
+        motor->base.measure.total_angle = motor->base.measure.single_round_angle;
+    }
+    else
+    {
+        /* 多圈角度计算 */
+        int16_t delta_ecd = motor->measure.ecd - motor->measure.last_ecd;
+        if (delta_ecd > 4096)
+            motor->measure.total_round--;
+        else if (delta_ecd < -4096)
+            motor->measure.total_round++;
 
-    motor->base.measure.total_angle = (float)motor->measure.total_round * (2.0f * PI) + motor->base.measure.single_round_angle;
+        motor->base.measure.total_angle =
+            (float)motor->measure.total_round * (2.0f * PI) + motor->base.measure.single_round_angle;
+        motor->measure.last_ecd = motor->measure.ecd;
+    }
 
     motor->base.measure.torque_nm = motor->base.controller.output_torque;
     /* 只有收到完整有效反馈后，底层 raw/角度限位才允许参与判定。 */

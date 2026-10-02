@@ -59,22 +59,36 @@ static void dm_can_rx_callback(Can_Device *dev, const uint8_t *data, uint8_t len
     motor->measure.T_Rotor                 = (float)data[7];
 
     float current_angle = motor->base.measure.single_round_angle;
-    float diff          = current_angle - motor->measure.last_single_round_angle;
-    float range         = param->p_max - param->p_min;
-    float half_range    = range * 0.5f;
-    if (diff < -half_range)
+    if (motor->base.feedback_valid == 0U)
     {
-        diff += range;
-        motor->measure.total_round++;
+        /*
+         * 首帧只建立累计角度基线，不根据初始值判断跨圈。
+         * 这样 J6 上电时处于任意合法姿态都不会被误计成已经跨过一圈。
+         */
+        motor->measure.last_single_round_angle = current_angle;
+        motor->measure.total_round             = 0;
+        motor->base.measure.total_angle       = current_angle;
     }
-    else if (diff > half_range)
+    else
     {
-        diff -= range;
-        motor->measure.total_round--;
+        float diff       = current_angle - motor->measure.last_single_round_angle;
+        float range      = param->p_max - param->p_min;
+        float half_range = range * 0.5f;
+        if (diff < -half_range)
+        {
+            diff += range;
+            motor->measure.total_round++;
+        }
+        else if (diff > half_range)
+        {
+            diff -= range;
+            motor->measure.total_round--;
+        }
+
+        motor->base.measure.total_angle += diff;
+        motor->measure.last_single_round_angle = current_angle;
     }
 
-    motor->base.measure.total_angle += diff;
-    motor->measure.last_single_round_angle = current_angle;
     motor->base.measure.torque_nm          = motor->measure.torque;
     /* 只有收到完整有效反馈后，底层 raw/角度限位才允许参与判定。 */
     motor->base.feedback_valid = 1U;

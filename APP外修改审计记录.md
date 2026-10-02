@@ -127,6 +127,17 @@
 | `modules/MOTOR/DAMIAO/motor_damiao.c` | `dm_apply()` 入口调用 `Motor_SafetyCheckBeforeApply()`；失败后进入已有零 MIT/位置/速度/PSI 输出分支。 | 保证达妙具体模式发送前，当前电机越限时不再发正常力矩/速度/位置指令。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
 | `modules/MOTOR/DJI/motor_dji.c` | `dji_apply()` 入口调用 `Motor_SafetyCheckBeforeApply()`；失败后进入已有零电流帧分支。 | 保证 GM6020 具体控制帧发送前，当前电机越限时只发零电流，不继续输出正常电流。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
 
+## 2026-10-02：机械臂角度限位来源整理
+
+### 本轮主动修改
+
+| 文件 | 修改内容 | 目的 | 验证 |
+| --- | --- | --- | --- |
+| `modules/MOTOR/motor_def.h` / `modules/MOTOR/motor_base.c` | 新增 `Motor_Safety_Angle_Source_e`，角度限位可明确选择单圈/协议角度或软件累计总角度；安全检查统一通过选择器读取角度。 | 让不跨圈关节使用 `single_round_angle`，J4/J6 跨圈关节使用 `total_angle`，不改变任何电机控制模式。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
+| `apps/arm/arm_def.h` / `apps/arm/single_board/robot_control.c` | 写入 J2~J7 角度限位（单位 rad）：J2 `[-1.9,1.8]`、J3 `[0.2,5.53]`、J4 `[-4.5,9.0]`、J5 `[-1.6,1.6]`、J6 `[-5.2,7.0]`、J7 `[-2.0,2.0]`；J2/J3/J5/J7 使用单圈/协议角度，J4/J6 使用累计角度；J1 限位保持关闭。 | 将实测机械限位直接配置到安全层，避免把角度值误当成 raw 编码值。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
+| `apps/arm/single_board/robot_control.c` | 将 J1 电机型号由 DM6220 改为 DM4310。 | 匹配底盘一号电机更换后的实物型号，避免速度/力矩编解码量程复用错误参数。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
+| `modules/MOTOR/DAMIAO/motor_damiao.c` / `modules/MOTOR/DJI/motor_dji.c` | 首次收到有效反馈时只建立累计角度基线，不根据默认 0 值判断跨圈。 | 防止 J4/J6 上电第一帧因与默认值差异过大而误加/减一圈，导致累计角度限位误触发。 | `cmake --build build/dji_c/Debug --parallel 4` 通过。 |
+
 ## 后续记录格式
 
 后续每次发生 App 层外修改时，在本文件末尾新增日期、提交、文件、目的、验证和来源；如果只修改 `apps/`，在交付说明中注明“无 App 层外修改”。

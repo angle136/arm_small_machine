@@ -65,6 +65,31 @@ static void motor_emergency_stop_all(Motor_Base *fault_motor, const char *reason
 }
 
 /**
+ * @brief 获取当前电机用于角度限位的反馈角度。
+ *
+ * @param motor 输入，电机基类指针。
+ *
+ * @return float 返回单圈/协议角度或软件累计总角度；未启用角度限位时返回 0。
+ *
+ * @note 调用关系：由全局限位检查和具体驱动 Apply 前的最终检查调用。
+ */
+static float motor_get_safety_angle(const Motor_Base *motor)
+{
+    if (motor == NULL) return 0.0f;
+
+    switch (motor->safety.angle_source)
+    {
+    case MOTOR_SAFETY_ANGLE_SINGLE:
+        return motor->measure.single_round_angle;
+    case MOTOR_SAFETY_ANGLE_TOTAL:
+        return motor->measure.total_angle;
+    case MOTOR_SAFETY_ANGLE_DISABLED:
+    default:
+        return 0.0f;
+    }
+}
+
+/**
  * @brief 检查单个电机是否处于配置的底层安全限位内。
  *
  * @param motor 输入，需要检查的电机基类指针。
@@ -120,9 +145,9 @@ static uint8_t motor_safety_check(Motor_Base *motor)
         }
     }
 
-    if (motor->safety.use_angle != 0U)
+    if (motor->safety.angle_source != MOTOR_SAFETY_ANGLE_DISABLED)
     {
-        float angle = motor->measure.total_angle;
+        float angle = motor_get_safety_angle(motor);
         if (angle < motor->safety.angle_min_rad || angle > motor->safety.angle_max_rad)
         {
             LOG_E("MOTOR LIMIT ANGLE: motor=%s angle=%.3f limit=[%.3f,%.3f]",
@@ -163,9 +188,9 @@ static uint8_t motor_limit_is_safe(const Motor_Base *motor)
         if (raw_in_range == 0U) return 0U;
     }
 
-    if (motor->safety.use_angle != 0U)
+    if (motor->safety.angle_source != MOTOR_SAFETY_ANGLE_DISABLED)
     {
-        float angle = motor->measure.total_angle;
+        float angle = motor_get_safety_angle(motor);
         if (angle < motor->safety.angle_min_rad || angle > motor->safety.angle_max_rad) return 0U;
     }
 

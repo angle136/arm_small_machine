@@ -25,16 +25,16 @@ typedef struct
     Motor_Safety_Limit_s safety;
 } Arm_Dm_Descriptor;
 
-#define ARM_RAW_LIMIT_CONFIG(enable_, min_, max_) \
-    {                                             \
-        .enable           = (enable_),            \
-        .use_raw_position = 1U,                   \
-        .use_angle        = 0U,                   \
-        .fatal_on_limit   = 1U,                   \
-        .raw_min          = (min_),               \
-        .raw_max          = (max_),               \
-        .angle_min_rad    = 0.0f,                 \
-        .angle_max_rad    = 0.0f,                 \
+#define ARM_ANGLE_LIMIT_CONFIG(enable_, source_, min_, max_) \
+    {                                                       \
+        .enable           = (enable_),                      \
+        .use_raw_position = 0U,                             \
+        .fatal_on_limit   = 1U,                             \
+        .raw_min          = 0,                               \
+        .raw_max          = 0,                               \
+        .angle_source     = (source_),                      \
+        .angle_min_rad    = (min_),                          \
+        .angle_max_rad    = (max_),                          \
     }
 
 static DM_Motor_t *g_dm_motors[6];
@@ -136,8 +136,8 @@ static void arm_register_j4(void)
     config.motor_init_info.gear_ratio = 1.0f;
     config.motor_init_info.torque_constant = 0.741f;
     config.motor_init_info.max_torque = 0.0f;
-    config.safety_limit_config =
-        (Motor_Safety_Limit_s)ARM_RAW_LIMIT_CONFIG(ARM_J4_LIMIT_ENABLE, ARM_J4_RAW_MIN, ARM_J4_RAW_MAX);
+    config.safety_limit_config = (Motor_Safety_Limit_s)ARM_ANGLE_LIMIT_CONFIG(
+        ARM_J4_LIMIT_ENABLE, MOTOR_SAFETY_ANGLE_TOTAL, ARM_J4_ANGLE_MIN, ARM_J4_ANGLE_MAX);
 
     g_j4_motor = Motor_DJI_Init(&config);
     if (g_j4_motor == NULL)
@@ -318,18 +318,18 @@ static void arm_feedback_task(ULONG thread_input)
 void robot_control_init(void)
 {
     static const Arm_Dm_Descriptor dm_descriptors[] = {
-        {"J1_DM6220", BSP_CAN_HANDLE2, ARM_J1_DM_TX_ID, ARM_J1_DM_RX_ID, DM6220,
-         ARM_RAW_LIMIT_CONFIG(ARM_J1_LIMIT_ENABLE, ARM_J1_RAW_MIN, ARM_J1_RAW_MAX)},
+        {"J1_DM4310", BSP_CAN_HANDLE2, ARM_J1_DM_TX_ID, ARM_J1_DM_RX_ID, DM4310,
+         ARM_ANGLE_LIMIT_CONFIG(ARM_J1_LIMIT_ENABLE, MOTOR_SAFETY_ANGLE_DISABLED, ARM_J1_ANGLE_MIN, ARM_J1_ANGLE_MAX)},
         {"J2_DM4340", BSP_CAN_HANDLE2, ARM_J2_DM_TX_ID, ARM_J2_DM_RX_ID, DM4340,
-         ARM_RAW_LIMIT_CONFIG(ARM_J2_LIMIT_ENABLE, ARM_J2_RAW_MIN, ARM_J2_RAW_MAX)},
+         ARM_ANGLE_LIMIT_CONFIG(ARM_J2_LIMIT_ENABLE, MOTOR_SAFETY_ANGLE_SINGLE, ARM_J2_ANGLE_MIN, ARM_J2_ANGLE_MAX)},
         {"J3_DM4310", BSP_CAN_HANDLE2, ARM_J3_DM_TX_ID, ARM_J3_DM_RX_ID, DM4310,
-         ARM_RAW_LIMIT_CONFIG(ARM_J3_LIMIT_ENABLE, ARM_J3_RAW_MIN, ARM_J3_RAW_MAX)},
+         ARM_ANGLE_LIMIT_CONFIG(ARM_J3_LIMIT_ENABLE, MOTOR_SAFETY_ANGLE_SINGLE, ARM_J3_ANGLE_MIN, ARM_J3_ANGLE_MAX)},
         {"J5_DM4310", BSP_CAN_HANDLE1, ARM_J5_DM_TX_ID, ARM_J5_DM_RX_ID, DM4310,
-         ARM_RAW_LIMIT_CONFIG(ARM_J5_LIMIT_ENABLE, ARM_J5_RAW_MIN, ARM_J5_RAW_MAX)},
+         ARM_ANGLE_LIMIT_CONFIG(ARM_J5_LIMIT_ENABLE, MOTOR_SAFETY_ANGLE_SINGLE, ARM_J5_ANGLE_MIN, ARM_J5_ANGLE_MAX)},
         {"J6_DM3507", BSP_CAN_HANDLE1, ARM_J6_DM_TX_ID, ARM_J6_DM_RX_ID, DM3507,
-         ARM_RAW_LIMIT_CONFIG(ARM_J6_LIMIT_ENABLE, ARM_J6_RAW_MIN, ARM_J6_RAW_MAX)},
+         ARM_ANGLE_LIMIT_CONFIG(ARM_J6_LIMIT_ENABLE, MOTOR_SAFETY_ANGLE_TOTAL, ARM_J6_ANGLE_MIN, ARM_J6_ANGLE_MAX)},
         {"J7_DM3507", BSP_CAN_HANDLE1, ARM_J7_DM_TX_ID, ARM_J7_DM_RX_ID, DM3507,
-         ARM_RAW_LIMIT_CONFIG(ARM_J7_LIMIT_ENABLE, ARM_J7_RAW_MIN, ARM_J7_RAW_MAX)},
+         ARM_ANGLE_LIMIT_CONFIG(ARM_J7_LIMIT_ENABLE, MOTOR_SAFETY_ANGLE_SINGLE, ARM_J7_ANGLE_MIN, ARM_J7_ANGLE_MAX)},
     };
 
     /* BSP_Init starts clocks and GPIO; CAN tasking must precede device registration. */
