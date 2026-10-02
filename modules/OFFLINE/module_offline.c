@@ -33,7 +33,7 @@ static volatile bool              g_silent_error;                        /* 静�
 static volatile bool              g_fatal_fault;                         /* 系统级致命故障报警锁存标志 */
 static char                       g_fatal_source[32];                    /* 致命故障来源 */
 static char                       g_fatal_reason[64];                    /* 致命故障原因 */
-static bool                       g_initialized;                         /* 模块初始化完成标志*/
+static volatile bool              g_initialized;                         /* 模块初始化完成标志*/
 static TX_THREAD                  g_task_thread;                         /* 检测任务句柄 */
 APPS_STACK_SECTION static uint8_t g_task_stack[OFFLINE_TASK_STACK_SIZE]; /* 检测任务栈*/
 
@@ -193,15 +193,14 @@ void Module_Offline_init(void)
     memset(g_fatal_source, 0, sizeof(g_fatal_source));
     memset(g_fatal_reason, 0, sizeof(g_fatal_reason));
 
+    /*
+     * 先完成底层外设和模块状态初始化，再创建自动运行线程。
+     * ThreadX 允许 TX_AUTO_START 线程在 tx_thread_create 返回前获得调度；
+     * 若此时 g_initialized 仍为 false，线程会直接退出，导致离线检测和
+     * 致命故障蜂鸣逻辑永久失效。
+     */
     BSP_BEEP_Start();
     BSP_LED_Show(LED_Green);
-
-    if (tx_thread_create(&g_task_thread, "Offline Detect", offline_detect_task_entry, 0, g_task_stack, OFFLINE_TASK_STACK_SIZE, OFFLINE_TASK_PRIORITY,
-                         OFFLINE_TASK_PRIORITY, TX_NO_TIME_SLICE, TX_AUTO_START) != TX_SUCCESS)
-    {
-        LOG_E("Failed to create offline detect task");
-        return;
-    }
 
 #if OFFLINE_WATCHDOG_ENABLE
 #if defined(STM32H723xx)
@@ -214,6 +213,16 @@ void Module_Offline_init(void)
 #endif
 
     g_initialized = true;
+
+    /* 创建并自动启动离线检测线程；线程启动前模块状态已准备完毕。 */
+    if (tx_thread_create(&g_task_thread, "Offline Detect", offline_detect_task_entry, 0, g_task_stack, OFFLINE_TASK_STACK_SIZE, OFFLINE_TASK_PRIORITY,
+                         OFFLINE_TASK_PRIORITY, TX_NO_TIME_SLICE, TX_AUTO_START) != TX_SUCCESS)
+    {
+        g_initialized = false;
+        LOG_E("Failed to create offline detect task");
+        return;
+    }
+
     LOG_I("Offline module initialized");
 }
 

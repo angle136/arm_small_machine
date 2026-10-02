@@ -49,6 +49,23 @@ APPS_STACK_SECTION static uint8_t g_arm_feedback_stack[1024];
 volatile Arm_Feedback_Snapshot_t g_arm_feedback_snapshot;
 
 /**
+ * @brief 判断电机是否已经收到有效反馈且未被离线检测判定为超时。
+ *
+ * @param base 输入，电机基类指针。
+ *
+ * @return uint8_t 返回 1 表示当前反馈链路有效，返回 0 表示尚未收到有效反馈
+ *         或已经离线。
+ *
+ * @note 调用关系：由反馈快照刷新函数和状态日志函数调用；本函数只读取状态，
+ *       不访问 CAN、不改变电机使能状态。
+ */
+static uint8_t arm_feedback_online(const Motor_Base *base)
+{
+    if (base == NULL || base->feedback_valid == 0U || base->offline_dev == NULL) return 0U;
+    return (Module_Offline_get_device_status(base->offline_dev) == STATE_ONLINE) ? 1U : 0U;
+}
+
+/**
  * @brief 根据机械臂达妙关节描述生成通用电机初始化配置。
  *
  * @param desc 输入，达妙关节静态描述指针，包含名称、CAN 句柄、发送/接收 ID 和电机型号。
@@ -172,7 +189,7 @@ void arm_feedback_snapshot_update(void)
         Can_Device *can_dev = (Can_Device *)motor->base.transport_dev;
 
         feedback->valid          = motor->base.feedback_valid;
-        feedback->online         = (Module_Offline_get_device_status(motor->base.offline_dev) == STATE_ONLINE);
+        feedback->online         = arm_feedback_online(&motor->base);
         feedback->enabled        = motor->base.setting.enableflag;
         feedback->feedback_id    = motor->measure.id;
         feedback->tx_id          = (can_dev != NULL) ? can_dev->tx_id : 0U;
@@ -193,7 +210,7 @@ void arm_feedback_snapshot_update(void)
         volatile Arm_Motor_Feedback_t *feedback = &g_arm_feedback_snapshot.joint[3];
         Can_Device *can_dev = (Can_Device *)g_j4_motor->base.transport_dev;
 
-        feedback->online         = (Module_Offline_get_device_status(g_j4_motor->base.offline_dev) == STATE_ONLINE);
+        feedback->online         = arm_feedback_online(&g_j4_motor->base);
         feedback->valid          = g_j4_motor->base.feedback_valid;
         feedback->enabled        = g_j4_motor->base.setting.enableflag;
         feedback->feedback_id    = 0U;
@@ -241,9 +258,11 @@ static void arm_log_status(void)
         DM_Motor_t *motor = g_dm_motors[i];
         if (motor == NULL) continue;
 
-        LOG_I("%s DM online=%u id=%u q=%.3f dq=%.3f tau=%.3f temp=%u/%u",
+        LOG_I("%s DM online=%u valid=%u en=%u id=%u q=%.3f dq=%.3f tau=%.3f temp=%u/%u",
               g_dm_joint_names[i],
-              (unsigned)(Module_Offline_get_device_status(motor->base.offline_dev) == STATE_ONLINE),
+              (unsigned)arm_feedback_online(&motor->base),
+              (unsigned)motor->base.feedback_valid,
+              (unsigned)motor->base.setting.enableflag,
               (unsigned)motor->measure.id,
               motor->base.measure.total_angle,
               motor->base.measure.speed_rad,
@@ -254,8 +273,10 @@ static void arm_log_status(void)
 
     if (g_j4_motor != NULL)
     {
-        LOG_I("J4 GM6020 online=%u ecd=%u speed=%.1f current=%d temp=%u",
-              (unsigned)(Module_Offline_get_device_status(g_j4_motor->base.offline_dev) == STATE_ONLINE),
+        LOG_I("J4 GM6020 online=%u valid=%u en=%u ecd=%u speed=%.1f current=%d temp=%u",
+              (unsigned)arm_feedback_online(&g_j4_motor->base),
+              (unsigned)g_j4_motor->base.feedback_valid,
+              (unsigned)g_j4_motor->base.setting.enableflag,
               (unsigned)g_j4_motor->measure.ecd,
               g_j4_motor->measure.speed_rpm,
               (int)g_j4_motor->measure.real_current,
