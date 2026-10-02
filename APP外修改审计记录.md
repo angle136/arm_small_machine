@@ -157,3 +157,11 @@
 | 文件 | 修改内容 | 目的 | 验证 |
 | --- | --- | --- | --- |
 | `modules/MOTOR/DAMIAO/motor_damiao.c` | `Motor_DM_Init()` 初始化阶段不再发送 `DM_CMD_MOTOR_START`；清错后改为重复发送 `DM_CMD_MOTOR_STOP`，并补充中文注释说明第一阶段只读反馈。 | 避免软件 `enableflag=0` 但达妙本体已进入内部使能态，导致上电后不同电机出现灯色/阻尼不一致；后续重力补偿阶段再设计独立使能流程。 | 已执行 `cmake --build build/dji_c/Debug --config Debug --parallel 4`，构建通过。 |
+
+## 2026-10-02：致命故障报警增加闪灯
+
+### 本轮主动修改
+
+| 文件 | 修改内容 | 目的 | 验证 |
+| --- | --- | --- | --- |
+| `modules/OFFLINE/module_offline.c` | `g_fatal_fault` 锁存后不再红灯常亮，改为 100ms 周期红灯/灭灯闪烁；蜂鸣器仍保持持续报警。 | 让限位等安全锁存报警与普通静默离线红灯常亮区分开，便于现场快速识别安全故障。 | 已执行 `cmake --build build/dji_c/Debug --config Debug --parallel 4`，构建通过。 |

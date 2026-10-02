@@ -60,7 +60,19 @@ static void offline_detect_task_entry(ULONG arg)
 
         if (g_fatal_fault)
         {
-            BSP_LED_Show(LED_Red);
+            /*
+             * 致命故障使用最高优先级报警：蜂鸣持续，红灯闪烁。
+             * 这样能和普通静默离线的红灯常亮区分开，便于现场快速判断已经触发安全锁存。
+             */
+            uint32_t fatal_now = (uint32_t)BSP_DWT_GetTimeline_ms();
+            if (((fatal_now / 100UL) % 2UL) == 0UL)
+            {
+                BSP_LED_Show(LED_Red);
+            }
+            else
+            {
+                BSP_LED_Show(LED_Black);
+            }
 #if OFFLINE_BEEP_ENABLE
             BSP_BEEP_Set(OFFLINE_BEEP_TUNE_VALUE, OFFLINE_BEEP_CTRL_VALUE);
 #else
