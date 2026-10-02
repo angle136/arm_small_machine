@@ -149,3 +149,11 @@
 | 文件 | 修改内容 | 目的 | 验证 |
 | --- | --- | --- | --- |
 | `modules/OFFLINE/module_offline.c` | 将看门狗/蜂鸣器和模块状态初始化放到 `TX_AUTO_START` 离线线程创建之前；在线程创建成功前设置 `g_initialized`，创建失败时回滚；并将初始化标志声明为 `volatile`。 | 避免自动启动线程在模块标志置位前运行并直接退出，确保离线检测、红灯和致命故障蜂鸣始终能够工作。 | 已完成 `cmake -S board/dji_c -B build/dji_c/Debug --preset Debug -G Ninja -DROBOT=arm -DBOARD=single` 配置，并执行清理后全量构建；构建通过。 |
+
+## 2026-10-02：达妙初始化保持失能
+
+### 本轮主动修改
+
+| 文件 | 修改内容 | 目的 | 验证 |
+| --- | --- | --- | --- |
+| `modules/MOTOR/DAMIAO/motor_damiao.c` | `Motor_DM_Init()` 初始化阶段不再发送 `DM_CMD_MOTOR_START`；清错后改为重复发送 `DM_CMD_MOTOR_STOP`，并补充中文注释说明第一阶段只读反馈。 | 避免软件 `enableflag=0` 但达妙本体已进入内部使能态，导致上电后不同电机出现灯色/阻尼不一致；后续重力补偿阶段再设计独立使能流程。 | 已执行 `cmake --build build/dji_c/Debug --config Debug --parallel 4`，构建通过。 |

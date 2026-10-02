@@ -369,8 +369,10 @@ void Motor_DM_Cmd(DM_Motor_t *motor, DMMotor_Mode_e cmd)
  * @return DM_Motor_t* 初始化成功返回达妙电机对象指针；内存申请、参数检查或 CAN 注册失败时返回 NULL。
  *
  * @note 调用关系：由 APP 层电机注册函数调用；内部完成内存申请、基类字段初始化、CAN 接收注册、
- *       达妙清错/启动命令发送，并通过 Motor_Register() 注册到电机调度层。
- * @note 时序要求：初始化阶段清错和启动命令各重复发送一次，Motor_DM_Cmd() 内部负责命令帧间隔。
+ *       达妙清错/失能命令发送，并通过 Motor_Register() 注册到电机调度层。
+ * @note 时序要求：初始化阶段清错和失能命令各重复发送一次，Motor_DM_Cmd() 内部负责命令帧间隔。
+ * @note 安全策略：第一阶段只读取反馈和验证限位，不在初始化时发送 MOTOR_START，避免上电后电机进入
+ *       内部使能状态并产生阻尼；后续重力补偿阶段应通过独立的机械臂使能流程显式启动达妙电机。
  */
 DM_Motor_t *Motor_DM_Init(Motor_Init_Config_s *config, uint32_t DM_Mode_type)
 {
@@ -435,12 +437,16 @@ DM_Motor_t *Motor_DM_Init(Motor_Init_Config_s *config, uint32_t DM_Mode_type)
     /* 离线检测 */
     motor->base.offline_dev = Module_Offline_register(&config->offline_init_config);
 
-    /* 清除错误 + 使能电机。达妙上电初期对连续 CAN 帧比较敏感，按旧工程方式重复发送。 */
+    /*
+     * 第一阶段只做反馈读取：清除错误后显式保持失能。
+     * 不在 Init 中发送 MOTOR_START，避免软件 enableflag=0 但电机本体已进入使能态，
+     * 造成不同电机上电后阻尼/灯色不一致。
+     */
     motor->measure.Error_Code = DM_NO_ERROR;
     Motor_DM_Cmd(motor, DM_CMD_CLEAR_ERROR);
     Motor_DM_Cmd(motor, DM_CMD_CLEAR_ERROR);
-    Motor_DM_Cmd(motor, DM_CMD_MOTOR_START);
-    Motor_DM_Cmd(motor, DM_CMD_MOTOR_START);
+    Motor_DM_Cmd(motor, DM_CMD_MOTOR_STOP);
+    Motor_DM_Cmd(motor, DM_CMD_MOTOR_STOP);
 
     /* 注册到全局链表 */
     motor->base.GetRawPosition = dm_get_raw_position;
