@@ -165,3 +165,11 @@
 | 文件 | 修改内容 | 目的 | 验证 |
 | --- | --- | --- | --- |
 | `modules/OFFLINE/module_offline.c` | `g_fatal_fault` 锁存后不再红灯常亮，改为 100ms 周期红灯/灭灯闪烁；蜂鸣器仍保持持续报警。 | 让限位等安全锁存报警与普通静默离线红灯常亮区分开，便于现场快速识别安全故障。 | 已执行 `cmake --build build/dji_c/Debug --config Debug --parallel 4`，构建通过。 |
+
+## 2026-10-04：重力补偿调试阶段输出力矩硬限幅
+
+### 本轮主动修改
+
+| 文件 | 修改内容 | 目的 | 验证 |
+| --- | --- | --- | --- |
+| `modules/MOTOR/motor_base.c` | 新增 `motor_limit_output_torque()`，当 `Motor_Base.info.max_torque > 0` 时，将 `controller.output_torque` 硬限制到 `[-max_torque, max_torque]`；在 `Motor_SetOutputTorque()` 写入力矩后和 `Motor_ApplyAll()` 调用具体驱动 `Apply()` 前均执行限幅。 | 在重力补偿探索阶段提供下发前的通用力矩保险，防止上层试参或未来控制路径写入过大力矩导致疯转或机械损伤；`max_torque <= 0` 保持旧行为。 | 已执行 `git diff --check`；完整构建当前卡在 Ninja/CMake `Re-checking globbed directories` 阶段，未进入源码编译。 |

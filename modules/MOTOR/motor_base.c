@@ -35,6 +35,32 @@ static void motor_clear_output(Motor_Base *motor)
 }
 
 /**
+ * @brief 根据电机配置的最大力矩限制当前输出力矩。
+ *
+ * @param motor 输入，需要限幅的电机基类指针。
+ *
+ * @retval 无。
+ *
+ * @note 调用关系：由 Motor_SetOutputTorque() 和 Motor_ApplyAll() 调用。
+ * @note 安全策略：当 info.max_torque > 0 时，将 controller.output_torque
+ *       硬限制到 [-max_torque, max_torque]；max_torque <= 0 表示保持旧行为，不启用该限幅。
+ */
+static void motor_limit_output_torque(Motor_Base *motor)
+{
+    if (motor == NULL) return;
+    if (motor->info.max_torque <= 0.0f) return;
+
+    if (motor->controller.output_torque > motor->info.max_torque)
+    {
+        motor->controller.output_torque = motor->info.max_torque;
+    }
+    else if (motor->controller.output_torque < -motor->info.max_torque)
+    {
+        motor->controller.output_torque = -motor->info.max_torque;
+    }
+}
+
+/**
  * @brief 急停并失能全部已注册电机。
  *
  * @param fault_motor 输入，触发故障的电机，可为 NULL。
@@ -328,6 +354,7 @@ void Motor_ApplyAll(void)
             Motor_Base *motor = motor_find_next_can(can_cursor[bus_index], bus_index);
             if (motor != NULL)
             {
+                motor_limit_output_torque(motor);
                 if (motor->Apply != NULL) motor->Apply(motor);
                 can_cursor[bus_index] = motor->next;
                 sent_in_slot          = 1U;
@@ -342,6 +369,7 @@ void Motor_ApplyAll(void)
     {
         if (motor->transport != MOTOR_TRANSPORT_CAN && motor->Apply != NULL)
         {
+            motor_limit_output_torque(motor);
             motor->Apply(motor);
         }
     }
@@ -500,6 +528,7 @@ void Motor_SetOutputTorque(Motor_Base *m, float torque)
         return;
     }
     m->controller.output_torque = torque;
+    motor_limit_output_torque(m);
 }
 
 /**

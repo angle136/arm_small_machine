@@ -20,6 +20,10 @@ typedef struct
     float angle_rad;         /**< 累计角度，单位 rad；由电机驱动层维护。 */
     float speed_rad_s;       /**< 角速度，单位 rad/s。 */
     float torque_nm;         /**< 输出力矩估算值，单位 N·m。 */
+    float joint_angle_rad;   /**< 软件零点标定后的机械关节角，单位 rad；竖直零点附近为 0。 */
+    float joint_speed_rad_s; /**< 按关节方向修正后的机械关节角速度，单位 rad/s。 */
+    float model_angle_rad;   /**< 对齐老工程重力补偿公式的模型角，单位 rad。 */
+    float model_speed_rad_s; /**< 对齐老工程重力补偿公式的模型角速度，单位 rad/s。 */
 
     uint8_t temperature_1;   /**< 温度通道 1；达妙为 MOS 温度，GM6020 为电机温度。 */
     uint8_t temperature_2;   /**< 温度通道 2；达妙为转子温度，GM6020 当前填 0。 */
