@@ -9,6 +9,7 @@
 #include "motor_dji.h"
 #include "motor_def.h"
 #include "tx_api.h"
+#include <math.h>
 #include <string.h>
 
 #define LOG_TAG "app_arm"
@@ -429,6 +430,132 @@ static void arm_log_status(void)
 }
 
 /**
+ * @brief 判断 J2/J3/J4/J5 是否具备 J5 重力补偿计算所需的有效反馈。
+ *
+ * @param 无。
+ *
+ * @return uint8_t 返回 1 表示反馈有效且在线，返回 0 表示至少一个相关关节不可用。
+ *
+ * @note 调用关系：由 J5 重力补偿 dry-run 打印和输出更新函数调用；本函数只读取快照状态。
+ */
+static uint8_t arm_j5_gravity_feedback_ready(void)
+{
+    const volatile Arm_Feedback_Snapshot_t *fb = arm_feedback_snapshot_get();
+
+    const volatile Arm_Motor_Feedback_t *j2 = &fb->joint[1];
+    const volatile Arm_Motor_Feedback_t *j3 = &fb->joint[2];
+    const volatile Arm_Motor_Feedback_t *j4 = &fb->joint[3];
+    const volatile Arm_Motor_Feedback_t *j5 = &fb->joint[4];
+
+    return (j2->online != 0U && j2->valid != 0U &&
+            j3->online != 0U && j3->valid != 0U &&
+            j4->online != 0U && j4->valid != 0U &&
+            j5->online != 0U && j5->valid != 0U) ? 1U : 0U;
+}
+
+/**
+ * @brief 计算 J5 单关节旧工程重力补偿力矩。
+ *
+ * @param q2_out  输出，可为 NULL；返回 J2 模型角，单位 rad。
+ * @param q3_out  输出，可为 NULL；返回 J3 模型角，单位 rad。
+ * @param q4_out  输出，可为 NULL；返回 J4 模型角，单位 rad。
+ * @param q5_out  输出，可为 NULL；返回 J5 模型角，单位 rad。
+ *
+ * @return float J5 重力补偿力矩估计值，单位 N·m。
+ *
+ * @note 调用关系：由 dry-run 日志和 J5 输出更新函数调用；只读反馈快照，不改变电机状态。
+ */
+static float arm_calc_j5_gravity_torque(float *q2_out, float *q3_out, float *q4_out, float *q5_out)
+{
+    const volatile Arm_Feedback_Snapshot_t *fb = arm_feedback_snapshot_get();
+    const volatile Arm_Motor_Feedback_t *j2 = &fb->joint[1];
+    const volatile Arm_Motor_Feedback_t *j3 = &fb->joint[2];
+    const volatile Arm_Motor_Feedback_t *j4 = &fb->joint[3];
+    const volatile Arm_Motor_Feedback_t *j5 = &fb->joint[4];
+
+    float q2 = j2->model_angle_rad;
+    float q3 = j3->model_angle_rad;
+    float q4 = j4->model_angle_rad;
+    float q5 = j5->model_angle_rad;
+
+    if (q2_out != NULL) *q2_out = q2;
+    if (q3_out != NULL) *q3_out = q3;
+    if (q4_out != NULL) *q4_out = q4;
+    if (q5_out != NULL) *q5_out = q5;
+
+    return ARM_J5_GRAVITY_COM * sinf(q5 + q2 + q3) * cosf(q4);
+}
+
+#if (ARM_J5_GRAVITY_LOG_ENABLE != 0U)
+/**
+ * @brief 打印 J5 单关节重力补偿 dry-run 计算结果。
+ *
+ * @param 无。
+ *
+ * @retval 无。
+ *
+ * @note 调用关系：由 arm_status_task() 每秒调用；只读取反馈快照并计算旧工程 J5 重力项。
+ * @note 安全说明：本函数不调用 Motor_Start()，不调用 Motor_SetOutputTorque()，不改变任何电机输出。
+ */
+static void arm_log_j5_gravity_test(void)
+{
+    if (arm_j5_gravity_feedback_ready() == 0U)
+    {
+        LOG_W("gc J5 skip: feedback not ready");
+        return;
+    }
+
+    float q2 = 0.0f;
+    float q3 = 0.0f;
+    float q4 = 0.0f;
+    float q5 = 0.0f;
+    float tau_g = arm_calc_j5_gravity_torque(&q2, &q3, &q4, &q5);
+    float tau_test = ARM_J5_GRAVITY_TEST_SCALE * tau_g;
+
+    LOG_I("gc J5 q2=%.3f q3=%.3f q4=%.3f q5=%.3f tau=%.3f cmd%.0f%%=%.3f",
+          q2,
+          q3,
+          q4,
+          q5,
+          tau_g,
+          ARM_J5_GRAVITY_TEST_SCALE * 100.0f,
+          tau_test);
+}
+#endif /* ARM_J5_GRAVITY_LOG_ENABLE */
+
+/**
+ * @brief 按配置更新 J5 单关节重力补偿输出。
+ *
+ * @param 无。
+ *
+ * @retval 无。
+ *
+ * @note 调用关系：由 arm_feedback_task() 在刷新反馈快照后周期调用。
+ * @note 安全说明：默认 ARM_J5_GRAVITY_OUTPUT_ENABLE 为 0，本函数不输出；打开后只使能 J5，
+ *       按 ARM_J5_GRAVITY_TEST_SCALE 小比例输出，并继续受底层 max_torque 硬限幅保护。
+ */
+static void arm_j5_gravity_output_update(void)
+{
+#if (ARM_J5_GRAVITY_OUTPUT_ENABLE != 0U)
+    DM_Motor_t *j5_motor = g_dm_motors[3];
+    if (j5_motor == NULL) return;
+
+    if (arm_j5_gravity_feedback_ready() == 0U)
+    {
+        Motor_Stop(&j5_motor->base);
+        Motor_SetOutputTorque(&j5_motor->base, 0.0f);
+        return;
+    }
+
+    float tau_g = arm_calc_j5_gravity_torque(NULL, NULL, NULL, NULL);
+    float tau_cmd = ARM_J5_GRAVITY_OUTPUT_SIGN * ARM_J5_GRAVITY_TEST_SCALE * tau_g;
+
+    Motor_Start(&j5_motor->base);
+    Motor_SetOutputTorque(&j5_motor->base, tau_cmd);
+#endif /* ARM_J5_GRAVITY_OUTPUT_ENABLE */
+}
+
+/**
  * @brief 机械臂状态日志线程入口函数。
  *
  * @param thread_input 输入，ThreadX 线程入口参数，当前未使用。
@@ -444,6 +571,9 @@ static void arm_status_task(ULONG thread_input)
     while (1)
     {
         arm_log_status();
+#if (ARM_J5_GRAVITY_LOG_ENABLE != 0U)
+        arm_log_j5_gravity_test();
+#endif /* ARM_J5_GRAVITY_LOG_ENABLE */
         tx_thread_sleep(1000);
     }
 }
@@ -465,6 +595,7 @@ static void arm_feedback_task(ULONG thread_input)
     while (1)
     {
         arm_feedback_snapshot_update();
+        arm_j5_gravity_output_update();
         tx_thread_sleep(1);
     }
 }

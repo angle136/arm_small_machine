@@ -17,6 +17,17 @@
  */
 #define ARM_TEMP_OUTPUT_TORQUE_LIMIT_NM 1.5f
 
+/*
+ * J5 重力补偿 dry-run 打印配置。
+ *
+ * 当前只计算并打印，不使能电机、不下发力矩；确认符号和量级后再进入小比例输出阶段。
+ */
+#define ARM_J5_GRAVITY_LOG_ENABLE  1U
+#define ARM_J5_GRAVITY_OUTPUT_ENABLE 0U
+#define ARM_J5_GRAVITY_COM         0.38f
+#define ARM_J5_GRAVITY_TEST_SCALE  0.10f
+#define ARM_J5_GRAVITY_OUTPUT_SIGN 1.0f
+
 /* 达妙命令 ID / 反馈 ID，沿用旧机械臂的 CAN 分配。 */
 #define ARM_J1_DM_TX_ID 0x02U
 #define ARM_J1_DM_RX_ID 0x12U
