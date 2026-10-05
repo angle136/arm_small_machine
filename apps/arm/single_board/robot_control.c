@@ -21,32 +21,32 @@
 
 typedef struct
 {
-    const char *name;
-    CAN_HandleTypeDef *hcan;
-    uint32_t tx_id;
-    uint32_t rx_id;
-    Motor_Type_e type;
+    const char          *name;
+    CAN_HandleTypeDef   *hcan;
+    uint32_t             tx_id;
+    uint32_t             rx_id;
+    Motor_Type_e         type;
     Motor_Safety_Limit_s safety;
 } Arm_Dm_Descriptor;
 
-#define ARM_ANGLE_LIMIT_CONFIG(enable_, source_, min_, max_) \
-    {                                                       \
-        .enable           = (enable_),                      \
-        .use_raw_position = 0U,                             \
-        .fatal_on_limit   = 1U,                             \
-        .raw_min          = 0,                               \
-        .raw_max          = 0,                               \
-        .angle_source     = (source_),                      \
-        .angle_min_rad    = (min_),                          \
-        .angle_max_rad    = (max_),                          \
+#define ARM_ANGLE_LIMIT_CONFIG(enable_, source_, min_, max_)                                                                                         \
+    {                                                                                                                                                \
+        .enable           = (enable_),                                                                                                               \
+        .use_raw_position = 0U,                                                                                                                      \
+        .fatal_on_limit   = 1U,                                                                                                                      \
+        .raw_min          = 0,                                                                                                                       \
+        .raw_max          = 0,                                                                                                                       \
+        .angle_source     = (source_),                                                                                                               \
+        .angle_min_rad    = (min_),                                                                                                                  \
+        .angle_max_rad    = (max_),                                                                                                                  \
     }
 
-static DM_Motor_t *g_dm_motors[6];
-static DJI_Motor_t *g_j4_motor;
-static const char *const g_dm_joint_names[6] = {"J1", "J2", "J3", "J5", "J6", "J7"};
-static const uint8_t g_dm_snapshot_index[6] = {0, 1, 2, 4, 5, 6};
-static TX_THREAD g_arm_status_thread;
-static TX_THREAD g_arm_feedback_thread;
+static DM_Motor_t                *g_dm_motors[6];
+static DJI_Motor_t               *g_j4_motor;
+static const char *const          g_dm_joint_names[6]    = {"J1", "J2", "J3", "J5", "J6", "J7"};
+static const uint8_t              g_dm_snapshot_index[6] = {0, 1, 2, 4, 5, 6};
+static TX_THREAD                  g_arm_status_thread;
+static TX_THREAD                  g_arm_feedback_thread;
 APPS_STACK_SECTION static uint8_t g_arm_status_stack[1536];
 APPS_STACK_SECTION static uint8_t g_arm_feedback_stack[1024];
 
@@ -195,21 +195,21 @@ static Motor_Init_Config_s arm_dm_config(const Arm_Dm_Descriptor *desc)
 {
     Motor_Init_Config_s config = {0};
 
-    config.offline_init_config.name = desc->name;
-    config.offline_init_config.timeout_ms = 500;
-    config.offline_init_config.beep_times = 0;
-    config.offline_init_config.enable = MOTOR_OFFLINE_ENABLE;
-    config.transport = MOTOR_TRANSPORT_CAN;
-    config.transport_config.can.hcan = desc->hcan;
-    config.transport_config.can.tx_id = desc->tx_id;
-    config.transport_config.can.rx_id = desc->rx_id;
+    config.offline_init_config.name           = desc->name;
+    config.offline_init_config.timeout_ms     = 500;
+    config.offline_init_config.beep_times     = 0;
+    config.offline_init_config.enable         = MOTOR_OFFLINE_ENABLE;
+    config.transport                          = MOTOR_TRANSPORT_CAN;
+    config.transport_config.can.hcan          = desc->hcan;
+    config.transport_config.can.tx_id         = desc->tx_id;
+    config.transport_config.can.rx_id         = desc->rx_id;
     config.setting_init_config.algorithm_type = CONTROL_LQR;
-    config.setting_init_config.loop_type = OPEN_LOOP;
-    config.setting_init_config.enableflag = 0;
-    config.motor_init_info.motor_type = desc->type;
-    config.motor_init_info.gear_ratio = 1.0f;
-    config.motor_init_info.max_torque = ARM_TEMP_OUTPUT_TORQUE_LIMIT_NM;
-    config.safety_limit_config = desc->safety;
+    config.setting_init_config.loop_type      = OPEN_LOOP;
+    config.setting_init_config.enableflag     = 0;
+    config.motor_init_info.motor_type         = desc->type;
+    config.motor_init_info.gear_ratio         = 1.0f;
+    config.motor_init_info.max_torque         = ARM_TEMP_OUTPUT_TORQUE_LIMIT_NM;
+    config.safety_limit_config                = desc->safety;
 
     return config;
 }
@@ -238,8 +238,7 @@ static void arm_register_dm(size_t index, const Arm_Dm_Descriptor *desc)
 
     /* Keep the first bring-up passive: the DM driver emits only zero MIT frames. */
     Motor_Stop(&g_dm_motors[index]->base);
-    LOG_I("registered %s CAN tx=0x%03lX rx=0x%03lX", desc->name,
-          (unsigned long)desc->tx_id, (unsigned long)desc->rx_id);
+    LOG_I("registered %s CAN tx=0x%03lX rx=0x%03lX", desc->name, (unsigned long)desc->tx_id, (unsigned long)desc->rx_id);
 }
 
 /**
@@ -256,22 +255,22 @@ static void arm_register_j4(void)
 {
     Motor_Init_Config_s config = {0};
 
-    config.offline_init_config.name = "J4_GM6020";
-    config.offline_init_config.timeout_ms = 500;
-    config.offline_init_config.beep_times = 0;
-    config.offline_init_config.enable = MOTOR_OFFLINE_ENABLE;
-    config.transport = MOTOR_TRANSPORT_CAN;
-    config.transport_config.can.hcan = BSP_CAN_HANDLE1;
-    config.transport_config.can.tx_id = ARM_J4_DJI_TX_ID;
+    config.offline_init_config.name           = "J4_GM6020";
+    config.offline_init_config.timeout_ms     = 500;
+    config.offline_init_config.beep_times     = 0;
+    config.offline_init_config.enable         = MOTOR_OFFLINE_ENABLE;
+    config.transport                          = MOTOR_TRANSPORT_CAN;
+    config.transport_config.can.hcan          = BSP_CAN_HANDLE1;
+    config.transport_config.can.tx_id         = ARM_J4_DJI_TX_ID;
     config.setting_init_config.algorithm_type = CONTROL_LQR;
-    config.setting_init_config.loop_type = OPEN_LOOP;
-    config.setting_init_config.enableflag = 0;
-    config.motor_init_info.motor_type = GM6020_CURRENT;
-    config.motor_init_info.gear_ratio = 1.0f;
-    config.motor_init_info.torque_constant = 0.741f;
-    config.motor_init_info.max_torque = ARM_TEMP_OUTPUT_TORQUE_LIMIT_NM;
-    config.safety_limit_config = (Motor_Safety_Limit_s)ARM_ANGLE_LIMIT_CONFIG(
-        ARM_J4_LIMIT_ENABLE, MOTOR_SAFETY_ANGLE_TOTAL, ARM_J4_ANGLE_MIN, ARM_J4_ANGLE_MAX);
+    config.setting_init_config.loop_type      = OPEN_LOOP;
+    config.setting_init_config.enableflag     = 0;
+    config.motor_init_info.motor_type         = GM6020_CURRENT;
+    config.motor_init_info.gear_ratio         = 1.0f;
+    config.motor_init_info.torque_constant    = 0.741f;
+    config.motor_init_info.max_torque         = ARM_TEMP_OUTPUT_TORQUE_LIMIT_NM;
+    config.safety_limit_config =
+        (Motor_Safety_Limit_s)ARM_ANGLE_LIMIT_CONFIG(ARM_J4_LIMIT_ENABLE, MOTOR_SAFETY_ANGLE_TOTAL, ARM_J4_ANGLE_MIN, ARM_J4_ANGLE_MAX);
 
     g_j4_motor = Motor_DJI_Init(&config);
     if (g_j4_motor == NULL)
@@ -301,63 +300,58 @@ void arm_feedback_snapshot_update(void)
         DM_Motor_t *motor = g_dm_motors[i];
         if (motor == NULL) continue;
 
-        volatile Arm_Motor_Feedback_t *feedback =
-            &g_arm_feedback_snapshot.joint[g_dm_snapshot_index[i]];
-        Can_Device *can_dev = (Can_Device *)motor->base.transport_dev;
-        float joint_angle_rad =
-            arm_joint_angle_from_raw(g_dm_snapshot_index[i], motor->base.measure.single_round_angle);
-        float joint_speed_rad_s =
-            arm_joint_speed_from_raw(g_dm_snapshot_index[i], motor->base.measure.speed_rad);
+        volatile Arm_Motor_Feedback_t *feedback          = &g_arm_feedback_snapshot.joint[g_dm_snapshot_index[i]];
+        Can_Device                    *can_dev           = (Can_Device *)motor->base.transport_dev;
+        float                          joint_angle_rad   = arm_joint_angle_from_raw(g_dm_snapshot_index[i], motor->base.measure.single_round_angle);
+        float                          joint_speed_rad_s = arm_joint_speed_from_raw(g_dm_snapshot_index[i], motor->base.measure.speed_rad);
 
-        feedback->valid          = motor->base.feedback_valid;
-        feedback->online         = arm_feedback_online(&motor->base);
-        feedback->enabled        = motor->base.setting.enableflag;
-        feedback->feedback_id    = motor->measure.id;
-        feedback->tx_id          = (can_dev != NULL) ? can_dev->tx_id : 0U;
-        feedback->rx_id          = (can_dev != NULL) ? can_dev->rx_id : 0U;
-        feedback->raw_position   = motor->measure.raw_position;
-        feedback->raw_speed      = 0;
-        feedback->raw_current    = 0;
-        feedback->angle_raw_rad  = motor->base.measure.single_round_angle;
-        feedback->angle_rad      = motor->base.measure.total_angle;
-        feedback->speed_rad_s    = motor->base.measure.speed_rad;
-        feedback->torque_nm      = motor->base.measure.torque_nm;
-        feedback->joint_angle_rad = joint_angle_rad;
+        feedback->valid             = motor->base.feedback_valid;
+        feedback->online            = arm_feedback_online(&motor->base);
+        feedback->enabled           = motor->base.setting.enableflag;
+        feedback->feedback_id       = motor->measure.id;
+        feedback->tx_id             = (can_dev != NULL) ? can_dev->tx_id : 0U;
+        feedback->rx_id             = (can_dev != NULL) ? can_dev->rx_id : 0U;
+        feedback->raw_position      = motor->measure.raw_position;
+        feedback->raw_speed         = 0;
+        feedback->raw_current       = 0;
+        feedback->angle_raw_rad     = motor->base.measure.single_round_angle;
+        feedback->angle_rad         = motor->base.measure.total_angle;
+        feedback->speed_rad_s       = motor->base.measure.speed_rad;
+        feedback->torque_nm         = motor->base.measure.torque_nm;
+        feedback->joint_angle_rad   = joint_angle_rad;
         feedback->joint_speed_rad_s = joint_speed_rad_s;
-        feedback->model_angle_rad = arm_model_angle_from_joint(g_dm_snapshot_index[i], joint_angle_rad);
+        feedback->model_angle_rad   = arm_model_angle_from_joint(g_dm_snapshot_index[i], joint_angle_rad);
         feedback->model_speed_rad_s = joint_speed_rad_s;
-        feedback->temperature_1  = (uint8_t)motor->measure.T_Mos;
-        feedback->temperature_2  = (uint8_t)motor->measure.T_Rotor;
+        feedback->temperature_1     = (uint8_t)motor->measure.T_Mos;
+        feedback->temperature_2     = (uint8_t)motor->measure.T_Rotor;
     }
 
     if (g_j4_motor != NULL)
     {
-        volatile Arm_Motor_Feedback_t *feedback = &g_arm_feedback_snapshot.joint[3];
-        Can_Device *can_dev = (Can_Device *)g_j4_motor->base.transport_dev;
-        float joint_angle_rad =
-            arm_joint_angle_from_raw(3U, g_j4_motor->base.measure.single_round_angle);
-        float joint_speed_rad_s =
-            arm_joint_speed_from_raw(3U, g_j4_motor->base.measure.speed_rad);
+        volatile Arm_Motor_Feedback_t *feedback          = &g_arm_feedback_snapshot.joint[3];
+        Can_Device                    *can_dev           = (Can_Device *)g_j4_motor->base.transport_dev;
+        float                          joint_angle_rad   = arm_joint_angle_from_raw(3U, g_j4_motor->base.measure.single_round_angle);
+        float                          joint_speed_rad_s = arm_joint_speed_from_raw(3U, g_j4_motor->base.measure.speed_rad);
 
-        feedback->online         = arm_feedback_online(&g_j4_motor->base);
-        feedback->valid          = g_j4_motor->base.feedback_valid;
-        feedback->enabled        = g_j4_motor->base.setting.enableflag;
-        feedback->feedback_id    = 0U;
-        feedback->tx_id          = (can_dev != NULL) ? can_dev->tx_id : 0U;
-        feedback->rx_id          = (can_dev != NULL) ? can_dev->rx_id : 0U;
-        feedback->raw_position   = g_j4_motor->measure.ecd;
-        feedback->raw_speed      = (int16_t)g_j4_motor->measure.speed_rpm;
-        feedback->raw_current    = g_j4_motor->measure.real_current;
-        feedback->angle_raw_rad  = g_j4_motor->base.measure.single_round_angle;
-        feedback->angle_rad      = g_j4_motor->base.measure.total_angle;
-        feedback->speed_rad_s    = g_j4_motor->base.measure.speed_rad;
-        feedback->torque_nm      = g_j4_motor->base.measure.torque_nm;
-        feedback->joint_angle_rad = joint_angle_rad;
+        feedback->online            = arm_feedback_online(&g_j4_motor->base);
+        feedback->valid             = g_j4_motor->base.feedback_valid;
+        feedback->enabled           = g_j4_motor->base.setting.enableflag;
+        feedback->feedback_id       = 0U;
+        feedback->tx_id             = (can_dev != NULL) ? can_dev->tx_id : 0U;
+        feedback->rx_id             = (can_dev != NULL) ? can_dev->rx_id : 0U;
+        feedback->raw_position      = g_j4_motor->measure.ecd;
+        feedback->raw_speed         = (int16_t)g_j4_motor->measure.speed_rpm;
+        feedback->raw_current       = g_j4_motor->measure.real_current;
+        feedback->angle_raw_rad     = g_j4_motor->base.measure.single_round_angle;
+        feedback->angle_rad         = g_j4_motor->base.measure.total_angle;
+        feedback->speed_rad_s       = g_j4_motor->base.measure.speed_rad;
+        feedback->torque_nm         = g_j4_motor->base.measure.torque_nm;
+        feedback->joint_angle_rad   = joint_angle_rad;
         feedback->joint_speed_rad_s = joint_speed_rad_s;
-        feedback->model_angle_rad = arm_model_angle_from_joint(3U, joint_angle_rad);
+        feedback->model_angle_rad   = arm_model_angle_from_joint(3U, joint_angle_rad);
         feedback->model_speed_rad_s = joint_speed_rad_s;
-        feedback->temperature_1  = g_j4_motor->measure.temperature;
-        feedback->temperature_2  = 0U;
+        feedback->temperature_1     = g_j4_motor->measure.temperature;
+        feedback->temperature_2     = 0U;
     }
 }
 
@@ -370,10 +364,7 @@ void arm_feedback_snapshot_update(void)
  *
  * @note 调用关系：供 APP 层读取；函数本身不加锁、不复制数据，适合调试观察和轻量状态读取。
  */
-const volatile Arm_Feedback_Snapshot_t *arm_feedback_snapshot_get(void)
-{
-    return &g_arm_feedback_snapshot;
-}
+const volatile Arm_Feedback_Snapshot_t *arm_feedback_snapshot_get(void) { return &g_arm_feedback_snapshot; }
 
 /**
  * @brief 打印机械臂各电机当前在线状态和核心反馈值。
@@ -391,54 +382,40 @@ static void arm_log_status(void)
         DM_Motor_t *motor = g_dm_motors[i];
         if (motor == NULL) continue;
 
-        float raw_angle = motor->base.measure.single_round_angle;
+        float raw_angle   = motor->base.measure.single_round_angle;
         float joint_angle = arm_joint_angle_from_raw(g_dm_snapshot_index[i], raw_angle);
         float joint_speed = arm_joint_speed_from_raw(g_dm_snapshot_index[i], motor->base.measure.speed_rad);
 
-        LOG_I("%s DM on=%u v=%u en=%u id=%u raw=%.3f q=%.3f dq=%.3f tau=%.3f T=%u/%u",
-              g_dm_joint_names[i],
-              (unsigned)arm_feedback_online(&motor->base),
-              (unsigned)motor->base.feedback_valid,
-              (unsigned)motor->base.setting.enableflag,
-              (unsigned)motor->measure.id,
-              raw_angle,
-              joint_angle,
-              joint_speed,
-              motor->base.measure.torque_nm,
-              (unsigned)motor->measure.T_Mos,
-              (unsigned)motor->measure.T_Rotor);
+        /* hw_cmd=1 仅表示 START 命令已入队；达妙没有硬件启动确认帧，不能等同于绿灯确认。 */
+        LOG_I("%s DM on=%u v=%u en=%u hw_cmd=%u id=%u raw=%.3f q=%.3f dq=%.3f tau=%.3f T=%u/%u", g_dm_joint_names[i],
+              (unsigned)arm_feedback_online(&motor->base), (unsigned)motor->base.feedback_valid, (unsigned)motor->base.setting.enableflag,
+              (unsigned)motor->hardware_start_sent, (unsigned)motor->measure.id, raw_angle, joint_angle, joint_speed, motor->base.measure.torque_nm,
+              (unsigned)motor->measure.T_Mos, (unsigned)motor->measure.T_Rotor);
     }
 
     if (g_j4_motor != NULL)
     {
-        float raw_angle = g_j4_motor->base.measure.single_round_angle;
+        float raw_angle   = g_j4_motor->base.measure.single_round_angle;
         float joint_angle = arm_joint_angle_from_raw(3U, raw_angle);
         float joint_speed = arm_joint_speed_from_raw(3U, g_j4_motor->base.measure.speed_rad);
 
-        LOG_I("J4 GM6020 on=%u v=%u en=%u ecd=%u raw=%.3f q=%.3f dq=%.3f rpm=%.1f cur=%d T=%u",
-              (unsigned)arm_feedback_online(&g_j4_motor->base),
-              (unsigned)g_j4_motor->base.feedback_valid,
-              (unsigned)g_j4_motor->base.setting.enableflag,
-              (unsigned)g_j4_motor->measure.ecd,
-              raw_angle,
-              joint_angle,
-              joint_speed,
-              g_j4_motor->measure.speed_rpm,
-              (int)g_j4_motor->measure.real_current,
+        LOG_I("J4 GM6020 on=%u v=%u en=%u ecd=%u raw=%.3f q=%.3f dq=%.3f rpm=%.1f cur=%d T=%u", (unsigned)arm_feedback_online(&g_j4_motor->base),
+              (unsigned)g_j4_motor->base.feedback_valid, (unsigned)g_j4_motor->base.setting.enableflag, (unsigned)g_j4_motor->measure.ecd, raw_angle,
+              joint_angle, joint_speed, g_j4_motor->measure.speed_rpm, (int)g_j4_motor->measure.real_current,
               (unsigned)g_j4_motor->measure.temperature);
     }
 }
 
 /**
- * @brief 判断 J2/J3/J4/J5 是否具备 J5 重力补偿计算所需的有效反馈。
+ * @brief 判断 J2/J3/J4/J5 是否具备腕部重力补偿计算所需的有效反馈。
  *
  * @param 无。
  *
  * @return uint8_t 返回 1 表示反馈有效且在线，返回 0 表示至少一个相关关节不可用。
  *
- * @note 调用关系：由 J5 重力补偿 dry-run 打印和输出更新函数调用；本函数只读取快照状态。
+ * @note 调用关系：由重力补偿输出更新函数调用；本函数只读取快照状态。
  */
-static uint8_t arm_j5_gravity_feedback_ready(void)
+static uint8_t arm_gravity_feedback_ready(void)
 {
     const volatile Arm_Feedback_Snapshot_t *fb = arm_feedback_snapshot_get();
 
@@ -447,112 +424,167 @@ static uint8_t arm_j5_gravity_feedback_ready(void)
     const volatile Arm_Motor_Feedback_t *j4 = &fb->joint[3];
     const volatile Arm_Motor_Feedback_t *j5 = &fb->joint[4];
 
-    return (j2->online != 0U && j2->valid != 0U &&
-            j3->online != 0U && j3->valid != 0U &&
-            j4->online != 0U && j4->valid != 0U &&
-            j5->online != 0U && j5->valid != 0U) ? 1U : 0U;
+    return (j2->online != 0U && j2->valid != 0U && j3->online != 0U && j3->valid != 0U && j4->online != 0U && j4->valid != 0U && j5->online != 0U &&
+            j5->valid != 0U)
+               ? 1U
+               : 0U;
 }
 
-/**
- * @brief 计算 J5 单关节旧工程重力补偿力矩。
- *
- * @param q2_out  输出，可为 NULL；返回 J2 模型角，单位 rad。
- * @param q3_out  输出，可为 NULL；返回 J3 模型角，单位 rad。
- * @param q4_out  输出，可为 NULL；返回 J4 模型角，单位 rad。
- * @param q5_out  输出，可为 NULL；返回 J5 模型角，单位 rad。
- *
- * @return float J5 重力补偿力矩估计值，单位 N·m。
- *
- * @note 调用关系：由 dry-run 日志和 J5 输出更新函数调用；只读反馈快照，不改变电机状态。
- */
-static float arm_calc_j5_gravity_torque(float *q2_out, float *q3_out, float *q4_out, float *q5_out)
+/** J2/J3/J4/J5 重力补偿共用的模型角和力矩计算结果。 */
+typedef struct
 {
-    const volatile Arm_Feedback_Snapshot_t *fb = arm_feedback_snapshot_get();
-    const volatile Arm_Motor_Feedback_t *j2 = &fb->joint[1];
-    const volatile Arm_Motor_Feedback_t *j3 = &fb->joint[2];
-    const volatile Arm_Motor_Feedback_t *j4 = &fb->joint[3];
-    const volatile Arm_Motor_Feedback_t *j5 = &fb->joint[4];
+    float q2;
+    float q3;
+    float q4;
+    float q5;
+    float tau2_nm;
+    float tau3_nm;
+    float tau4_nm;
+    float tau5_nm;
+} Arm_Gravity_Result_t;
 
-    float q2 = j2->model_angle_rad;
-    float q3 = j3->model_angle_rad;
-    float q4 = j4->model_angle_rad;
-    float q5 = j5->model_angle_rad;
-
-    if (q2_out != NULL) *q2_out = q2;
-    if (q3_out != NULL) *q3_out = q3;
-    if (q4_out != NULL) *q4_out = q4;
-    if (q5_out != NULL) *q5_out = q5;
-
-    return ARM_J5_GRAVITY_COM * sinf(q5 + q2 + q3) * cosf(q4);
-}
-
-#if (ARM_J5_GRAVITY_LOG_ENABLE != 0U)
 /**
- * @brief 打印 J5 单关节重力补偿 dry-run 计算结果。
+ * @brief 使用同一反馈快照计算 J2/J3/J4/J5 重力补偿力矩。
  *
- * @param 无。
+ * @param result 输出，保存模型角以及 J2/J3/J4/J5 重力补偿力矩，单位分别为 rad 和 N·m。
+ *
  *
  * @retval 无。
  *
- * @note 调用关系：由 arm_status_task() 每秒调用；只读取反馈快照并计算旧工程 J5 重力项。
- * @note 安全说明：本函数不调用 Motor_Start()，不调用 Motor_SetOutputTorque()，不改变任何电机输出。
+ * @note 调用关系：由重力补偿输出更新函数调用；调用前必须确认反馈在线且有效。
+ * @note
+ * 周期说明：输出路径在每次反馈快照刷新后调用一次，保证 J2/J3/J4/J5 使用同一组关节角。
+ * @note 安全说明：本函数只计算，不使能电机、不下发力矩。
+
  */
-static void arm_log_j5_gravity_test(void)
+static void arm_calc_gravity(Arm_Gravity_Result_t *result)
 {
-    if (arm_j5_gravity_feedback_ready() == 0U)
-    {
-        LOG_W("gc J5 skip: feedback not ready");
-        return;
-    }
+    if (result == NULL) return;
 
-    float q2 = 0.0f;
-    float q3 = 0.0f;
-    float q4 = 0.0f;
-    float q5 = 0.0f;
-    float tau_g = arm_calc_j5_gravity_torque(&q2, &q3, &q4, &q5);
-    float tau_test = ARM_J5_GRAVITY_TEST_SCALE * tau_g;
+    const volatile Arm_Feedback_Snapshot_t *fb = arm_feedback_snapshot_get();
+    const volatile Arm_Motor_Feedback_t    *j2 = &fb->joint[1];
+    const volatile Arm_Motor_Feedback_t    *j3 = &fb->joint[2];
+    const volatile Arm_Motor_Feedback_t    *j4 = &fb->joint[3];
+    const volatile Arm_Motor_Feedback_t    *j5 = &fb->joint[4];
 
-    LOG_I("gc J5 q2=%.3f q3=%.3f q4=%.3f q5=%.3f tau=%.3f cmd%.0f%%=%.3f",
-          q2,
-          q3,
-          q4,
-          q5,
-          tau_g,
-          ARM_J5_GRAVITY_TEST_SCALE * 100.0f,
-          tau_test);
+    result->q2 = j2->model_angle_rad;
+    result->q3 = j3->model_angle_rad;
+    result->q4 = j4->model_angle_rad;
+    result->q5 = j5->model_angle_rad;
+
+    result->tau2_nm = ARM_J2_BASE_MASS * ARM_J2_BASE_ARM_M * sinf(result->q2) +
+                      ARM_J2_LINK_MASS * (ARM_J2_LINK_BASE_ARM_M * sinf(result->q2) +
+                                          (-ARM_J2_LINK_J3_ARM_M) * sinf(result->q2 + result->q3)) +
+                      ARM_J2_DISTAL_MASS * (ARM_J2_DISTAL_BASE_ARM_M * sinf(result->q2) +
+                                            (-ARM_J2_DISTAL_J3_ARM_M) * sinf(result->q2 + result->q3) +
+                                            (-ARM_J2_DISTAL_WRIST_ARM_M) * sinf(result->q2 + result->q3 + result->q5));
+    result->tau3_nm = ARM_J3_DISTAL_MASS *
+                          (ARM_J3_LINK_ARM_M * sinf(result->q2 + result->q3) +
+                           ARM_J3_WRIST_ARM_M * sinf(result->q2 + result->q3 + result->q5)) +
+                      ARM_J3_GRAVITY_COM * sinf(result->q2 + result->q3);
+    result->tau4_nm = ARM_J4_GRAVITY_COUPLE_SCALE * ARM_J5_GRAVITY_COM * sinf(result->q2 + result->q3) * sinf(result->q5) * sinf(result->q4);
+    result->tau5_nm = ARM_J5_GRAVITY_COM * sinf(result->q5 + result->q2 + result->q3) * cosf(result->q4 * sinf(result->q2 + result->q3));
 }
-#endif /* ARM_J5_GRAVITY_LOG_ENABLE */
 
 /**
- * @brief 按配置更新 J5 单关节重力补偿输出。
+ * @brief 按配置更新 J2/J3/J4/J5 重力补偿输出。
  *
  * @param 无。
  *
  * @retval 无。
  *
  * @note 调用关系：由 arm_feedback_task() 在刷新反馈快照后周期调用。
- * @note 安全说明：默认 ARM_J5_GRAVITY_OUTPUT_ENABLE 为 0，本函数不输出；打开后只使能 J5，
- *       按 ARM_J5_GRAVITY_TEST_SCALE 小比例输出，并继续受底层 max_torque 硬限幅保护。
+ * @note 周期说明：由 arm_feedback_task() 每个 ThreadX tick 调用一次。
+ * @note 安全说明：只使能宏明确打开的
+ * J2/J3/J4/J5；任一所需反馈无效时四者立即停机清零，
+ *       有效时分别应用 TEST_SCALE 和 OUTPUT_SIGN，并继续受底层 max_torque 硬限幅保护。
+
  */
-static void arm_j5_gravity_output_update(void)
+static void arm_gravity_output_update(void)
 {
+#if (ARM_J2_GRAVITY_OUTPUT_ENABLE != 0U) || (ARM_J3_GRAVITY_OUTPUT_ENABLE != 0U) || (ARM_J4_GRAVITY_OUTPUT_ENABLE != 0U) || (ARM_J5_GRAVITY_OUTPUT_ENABLE != 0U)
+#if (ARM_J2_GRAVITY_OUTPUT_ENABLE != 0U)
+    DM_Motor_t *j2_motor = g_dm_motors[1];
+#endif /* ARM_J2_GRAVITY_OUTPUT_ENABLE */
+#if (ARM_J3_GRAVITY_OUTPUT_ENABLE != 0U)
+    DM_Motor_t *j3_motor = g_dm_motors[2];
+#endif /* ARM_J3_GRAVITY_OUTPUT_ENABLE */
 #if (ARM_J5_GRAVITY_OUTPUT_ENABLE != 0U)
     DM_Motor_t *j5_motor = g_dm_motors[3];
-    if (j5_motor == NULL) return;
+#endif /* ARM_J5_GRAVITY_OUTPUT_ENABLE */
 
-    if (arm_j5_gravity_feedback_ready() == 0U)
+    if (arm_gravity_feedback_ready() == 0U)
     {
-        Motor_Stop(&j5_motor->base);
-        Motor_SetOutputTorque(&j5_motor->base, 0.0f);
+#if (ARM_J2_GRAVITY_OUTPUT_ENABLE != 0U)
+        if (j2_motor != NULL)
+        {
+            Motor_Stop(&j2_motor->base);
+            Motor_SetOutputTorque(&j2_motor->base, 0.0f);
+        }
+#endif /* ARM_J2_GRAVITY_OUTPUT_ENABLE */
+#if (ARM_J3_GRAVITY_OUTPUT_ENABLE != 0U)
+        if (j3_motor != NULL)
+        {
+            Motor_Stop(&j3_motor->base);
+            Motor_SetOutputTorque(&j3_motor->base, 0.0f);
+        }
+#endif /* ARM_J3_GRAVITY_OUTPUT_ENABLE */
+#if (ARM_J4_GRAVITY_OUTPUT_ENABLE != 0U)
+        if (g_j4_motor != NULL)
+        {
+            Motor_Stop(&g_j4_motor->base);
+            Motor_SetOutputTorque(&g_j4_motor->base, 0.0f);
+        }
+#endif /* ARM_J4_GRAVITY_OUTPUT_ENABLE */
+#if (ARM_J5_GRAVITY_OUTPUT_ENABLE != 0U)
+        if (j5_motor != NULL)
+        {
+            Motor_Stop(&j5_motor->base);
+            Motor_SetOutputTorque(&j5_motor->base, 0.0f);
+        }
+#endif /* ARM_J5_GRAVITY_OUTPUT_ENABLE */
         return;
     }
 
-    float tau_g = arm_calc_j5_gravity_torque(NULL, NULL, NULL, NULL);
-    float tau_cmd = ARM_J5_GRAVITY_OUTPUT_SIGN * ARM_J5_GRAVITY_TEST_SCALE * tau_g;
+    Arm_Gravity_Result_t gravity = {0};
+    arm_calc_gravity(&gravity);
 
-    Motor_Start(&j5_motor->base);
-    Motor_SetOutputTorque(&j5_motor->base, tau_cmd);
+#if (ARM_J2_GRAVITY_OUTPUT_ENABLE != 0U)
+    if (j2_motor != NULL)
+    {
+        float tau2_cmd = ARM_J2_GRAVITY_OUTPUT_SIGN * ARM_J2_GRAVITY_TEST_SCALE * gravity.tau2_nm;
+        Motor_Start(&j2_motor->base);
+        Motor_SetOutputTorque(&j2_motor->base, tau2_cmd);
+    }
+#endif /* ARM_J2_GRAVITY_OUTPUT_ENABLE */
+
+#if (ARM_J3_GRAVITY_OUTPUT_ENABLE != 0U)
+    if (j3_motor != NULL)
+    {
+        float tau3_cmd = ARM_J3_GRAVITY_OUTPUT_SIGN * ARM_J3_GRAVITY_TEST_SCALE * gravity.tau3_nm;
+        Motor_Start(&j3_motor->base);
+        Motor_SetOutputTorque(&j3_motor->base, tau3_cmd);
+    }
+#endif /* ARM_J3_GRAVITY_OUTPUT_ENABLE */
+
+#if (ARM_J4_GRAVITY_OUTPUT_ENABLE != 0U)
+    if (g_j4_motor != NULL)
+    {
+        float tau4_cmd = ARM_J4_GRAVITY_OUTPUT_SIGN * ARM_J4_GRAVITY_TEST_SCALE * gravity.tau4_nm;
+        Motor_Start(&g_j4_motor->base);
+        Motor_SetOutputTorque(&g_j4_motor->base, tau4_cmd);
+    }
+#endif /* ARM_J4_GRAVITY_OUTPUT_ENABLE */
+
+#if (ARM_J5_GRAVITY_OUTPUT_ENABLE != 0U)
+    if (j5_motor != NULL)
+    {
+        float tau5_cmd = ARM_J5_GRAVITY_OUTPUT_SIGN * ARM_J5_GRAVITY_TEST_SCALE * gravity.tau5_nm;
+        Motor_Start(&j5_motor->base);
+        Motor_SetOutputTorque(&j5_motor->base, tau5_cmd);
+    }
 #endif /* ARM_J5_GRAVITY_OUTPUT_ENABLE */
+#endif /* ARM_J2_GRAVITY_OUTPUT_ENABLE || ARM_J3_GRAVITY_OUTPUT_ENABLE || ARM_J4_GRAVITY_OUTPUT_ENABLE || ARM_J5_GRAVITY_OUTPUT_ENABLE */
 }
 
 /**
@@ -571,9 +603,6 @@ static void arm_status_task(ULONG thread_input)
     while (1)
     {
         arm_log_status();
-#if (ARM_J5_GRAVITY_LOG_ENABLE != 0U)
-        arm_log_j5_gravity_test();
-#endif /* ARM_J5_GRAVITY_LOG_ENABLE */
         tx_thread_sleep(1000);
     }
 }
@@ -595,7 +624,7 @@ static void arm_feedback_task(ULONG thread_input)
     while (1)
     {
         arm_feedback_snapshot_update();
-        arm_j5_gravity_output_update();
+        arm_gravity_output_update();
         tx_thread_sleep(1);
     }
 }
@@ -638,19 +667,16 @@ void robot_control_init(void)
     arm_register_j4();
     memset((void *)&g_arm_feedback_snapshot, 0, sizeof(g_arm_feedback_snapshot));
 
-    UINT feedback_status =
-        tx_thread_create(&g_arm_feedback_thread, "arm_feedback", arm_feedback_task, 0,
-                         g_arm_feedback_stack, sizeof(g_arm_feedback_stack),
-                         13, 13, TX_NO_TIME_SLICE, TX_AUTO_START);
+    UINT feedback_status = tx_thread_create(&g_arm_feedback_thread, "arm_feedback", arm_feedback_task, 0, g_arm_feedback_stack,
+                                            sizeof(g_arm_feedback_stack), 13, 13, TX_NO_TIME_SLICE, TX_AUTO_START);
     if (feedback_status != TX_SUCCESS)
     {
         LOG_E("arm_feedback thread create failed: %u", (unsigned)feedback_status);
         return;
     }
 
-    UINT status = tx_thread_create(&g_arm_status_thread, "arm_status", arm_status_task, 0,
-                                   g_arm_status_stack, sizeof(g_arm_status_stack),
-                                   20, 20, TX_NO_TIME_SLICE, TX_AUTO_START);
+    UINT status = tx_thread_create(&g_arm_status_thread, "arm_status", arm_status_task, 0, g_arm_status_stack, sizeof(g_arm_status_stack), 20, 20,
+                                   TX_NO_TIME_SLICE, TX_AUTO_START);
     if (status != TX_SUCCESS)
     {
         LOG_E("arm_status thread create failed: %u", (unsigned)status);
