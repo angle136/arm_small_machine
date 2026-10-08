@@ -17,6 +17,13 @@
  */
 #define ARM_TEMP_OUTPUT_TORQUE_LIMIT_NM 5.0f
 
+/*
+ * 全关节零力矩在线测试开关：
+ * 1=J1~J7 保持硬件使能并持续发送 0 N.m，以便保留实时反馈；
+ * 0=恢复下方各关节配置的重力补偿输出。
+ */
+#define ARM_ZERO_TORQUE_MODE_ENABLE     0U
+
 /* J2/J3/J4/J5 重力补偿输出配置；所有输出继续受硬限幅和角度安全限位保护。 */
 
 #define ARM_J5_GRAVITY_OUTPUT_ENABLE    1U

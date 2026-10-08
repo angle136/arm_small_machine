@@ -66,6 +66,25 @@ static void arm_gravity_clear_debug_torque(void)
     g_arm_gravity_debug.tau5_cmd_nm = 0.0f;
 }
 
+/**
+ * @brief 在保留全部关节在线反馈的条件下发送零力矩命令。
+ * @param 无。
+ * @retval 无。
+ * @note 调用关系：仅由 arm_gravity_update() 在遥控器安全门和全部反馈检查通过后调用；
+ *       零力矩测试开关打开期间每个控制周期调用一次。
+ * @note 时序要求：沿用 arm_motor_apply_outputs() 和 Motor_ApplyAll() 的既有 CAN 调度。
+ * @note 安全说明：J1~J7 保持硬件使能，但目标力矩全部为 0 N.m；底层反馈在线检查、
+ *       角度限位和最终输出限幅继续生效。
+ */
+static void arm_gravity_apply_zero_torque_mode(void)
+{
+    static const float   torque_nm[ARM_MOTOR_COUNT] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    static const uint8_t enable[ARM_MOTOR_COUNT]    = {1U, 1U, 1U, 1U, 1U, 1U, 1U};
+
+    arm_gravity_clear_debug_torque();
+    arm_motor_apply_outputs(torque_nm, enable);
+}
+
 void arm_gravity_init(void)
 {
     memset((void *)&g_arm_gravity_debug, 0, sizeof(g_arm_gravity_debug));
@@ -85,6 +104,13 @@ void arm_gravity_update(void)
         g_arm_gravity_debug.output_active = 0U;
         arm_gravity_clear_debug_torque();
         arm_motor_stop_all();
+        return;
+    }
+
+    if (ARM_ZERO_TORQUE_MODE_ENABLE != 0U)
+    {
+        arm_gravity_apply_zero_torque_mode();
+        g_arm_gravity_debug.output_active = 1U;
         return;
     }
 
