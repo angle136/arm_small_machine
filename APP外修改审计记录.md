@@ -173,3 +173,12 @@
 | 文件 | 修改内容 | 目的 | 验证 |
 | --- | --- | --- | --- |
 | `modules/MOTOR/motor_base.c` | 新增 `motor_limit_output_torque()`，当 `Motor_Base.info.max_torque > 0` 时，将 `controller.output_torque` 硬限制到 `[-max_torque, max_torque]`；在 `Motor_SetOutputTorque()` 写入力矩后和 `Motor_ApplyAll()` 调用具体驱动 `Apply()` 前均执行限幅。 | 在重力补偿探索阶段提供下发前的通用力矩保险，防止上层试参或未来控制路径写入过大力矩导致疯转或机械损伤；`max_torque <= 0` 保持旧行为。 | 已执行 `git diff --check`；完整构建当前卡在 Ninja/CMake `Re-checking globbed directories` 阶段，未进入源码编译。 |
+
+## 2026-10-04：达妙硬件启停与软件使能同步
+
+### 本轮主动修改
+
+| 文件 | 修改内容 | 目的 | 验证 |
+| --- | --- | --- | --- |
+| `modules/MOTOR/DAMIAO/motor_damiao.h` | 在 `DM_Motor_t` 中新增 `hardware_start_sent` 状态字段。 | 为每一台达妙电机独立保存 START 命令是否已入队；达妙没有启动确认帧，因此该字段不冒充硬件 ACK，也避免用全局状态误启动其它电机。 | 已用 STM32F407 `board/dji_c` 的生成编译命令验证头文件可用。 |
+| `modules/MOTOR/DAMIAO/motor_damiao.c` | 将 `DM_CMD_MOTOR_START/STOP` 同步逻辑放入已有 `dm_apply()`；仅当当前对象软件 `enableflag=1`、反馈有效、在线且安全检查通过时发送一次 START；失能、掉线、反馈无效或安全故障时发送一次 STOP；START 所在周期不发送正常控制帧。 | 让 `Motor_Start()` 保持软件层职责，由现有电机调度线程完成逐电机硬件启停；保证 J5 的启动不会遍历或带起 J2/J3/J6/J7 等其它电机。 | 已直接编译 `motor_damiao.c` 和 arm APP 源文件；正常 Ninja 全量构建仍卡在 `Re-checking globbed directories`，未以该命令作为通过依据。 |

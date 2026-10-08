@@ -275,18 +275,36 @@ static void psi_ctrl(DM_Motor_t *motor, float pos, float vel, float current)
  *
  * @retval 无。
  *
- * @note 调用关系：由 Motor_ApplyAll() 槽位调度调用；内部根据离线/使能状态和 mode_type
- *       调用 mit_ctrl()、pos_speed_ctrl()、speed_ctrl() 或 psi_ctrl()。
- * @note 安全策略：电机离线或 enableflag 为 0 时发送对应模式下的零值控制帧。
+ * @note 调用关系：由 Motor_ApplyAll() 槽位调度调用；内部先同步达妙本体启停状态，
+ *       再根据 mode_type 调用 mit_ctrl()、pos_speed_ctrl()、speed_ctrl() 或 psi_ctrl()。
+ * @note 启停策略：enableflag 只表示软件请求；当本电机反馈有效、在线且通过安全检查时，
+ *       仅在 hardware_start_sent 为 0 时发送一次 MOTOR_START，并让本周期结束，下一周期再发送控制帧。
+ *       软件失能、掉线、反馈无效或安全检查失败时，仅在 hardware_start_sent 为 1 时发送一次 MOTOR_STOP。
+ * @note 隔离性：hardware_start_sent 属于当前 DM_Motor_t 对象，Motor_DM_Cmd() 使用该对象自己的
+ *       CAN 设备和发送 ID，不会启动链表中的其它电机。
  */
 static void dm_apply(Motor_Base *base)
 {
-    DM_Motor_t *motor   = MOTOR_GET_DERIVED(base, DM_Motor_t);
-    uint8_t     offline = (base->offline_dev != NULL && Module_Offline_get_device_status(base->offline_dev) == STATE_OFFLINE);
+    DM_Motor_t *motor = MOTOR_GET_DERIVED(base, DM_Motor_t);
+    uint8_t     offline =
+        (base->offline_dev != NULL && Module_Offline_get_device_status(base->offline_dev) == STATE_OFFLINE);
     uint8_t     safety_ok = Motor_SafetyCheckBeforeApply(base);
+    uint8_t     output_allowed =
+        (offline == 0U && base->feedback_valid != 0U && base->setting.enableflag != 0U && safety_ok != 0U) ? 1U : 0U;
 
-    if (offline || base->setting.enableflag == 0 || safety_ok == 0U)
+    if (output_allowed == 0U)
     {
+        /*
+         * 先发送一次协议层 STOP，再发送零控制帧。
+         * hardware_start_sent 置零后，后续周期不会重复发送 STOP。
+         */
+        if (motor->hardware_start_sent != 0U)
+        {
+            Motor_DM_Cmd(motor, DM_CMD_MOTOR_STOP);
+            motor->hardware_start_sent = 0U;
+            LOG_I("DM hardware stop: %s", base->name ? base->name : "unknown_motor");
+        }
+
         switch (motor->mode_type)
         {
         case DM_MIT_MODE:
@@ -304,6 +322,18 @@ static void dm_apply(Motor_Base *base)
         default:
             break;
         }
+        return;
+    }
+
+    /*
+     * 达妙硬件启动命令必须在正常控制帧之前单独发送。
+     * 本周期只发 START，不同时发送 MIT 力矩，避免启动命令和控制帧混在同一状态切换周期。
+     */
+    if (motor->hardware_start_sent == 0U)
+    {
+        Motor_DM_Cmd(motor, DM_CMD_MOTOR_START);
+        motor->hardware_start_sent = 1U;
+        LOG_I("DM hardware start: %s", base->name ? base->name : "unknown_motor");
         return;
     }
 
@@ -372,7 +402,7 @@ void Motor_DM_Cmd(DM_Motor_t *motor, DMMotor_Mode_e cmd)
  *       达妙清错/失能命令发送，并通过 Motor_Register() 注册到电机调度层。
  * @note 时序要求：初始化阶段清错和失能命令各重复发送一次，Motor_DM_Cmd() 内部负责命令帧间隔。
  * @note 安全策略：第一阶段只读取反馈和验证限位，不在初始化时发送 MOTOR_START，避免上电后电机进入
- *       内部使能状态并产生阻尼；后续重力补偿阶段应通过独立的机械臂使能流程显式启动达妙电机。
+ *       内部使能状态并产生阻尼；运行期由 dm_apply() 根据单台电机的 enableflag 和反馈状态同步硬件启停。
  */
 DM_Motor_t *Motor_DM_Init(Motor_Init_Config_s *config, uint32_t DM_Mode_type)
 {
