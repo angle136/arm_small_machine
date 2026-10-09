@@ -9,6 +9,10 @@
 
 #define MOTOR_CAN_SLOT_GAP_S 0.0002f
 
+#ifndef ARM_SOFTWARE_LIMIT_ENABLE
+#define ARM_SOFTWARE_LIMIT_ENABLE 1U
+#endif
+
 static Motor_Base *g_motor_list = NULL;
 static volatile uint8_t g_motor_safety_fault = 0U;
 
@@ -126,6 +130,10 @@ static float motor_get_safety_angle(const Motor_Base *motor)
  */
 static uint8_t motor_safety_check(Motor_Base *motor)
 {
+#if !ARM_SOFTWARE_LIMIT_ENABLE
+    (void)motor;
+    return 1U;
+#else
     if (motor == NULL) return 0U;
     if (g_motor_safety_fault != 0U)
     {
@@ -187,6 +195,7 @@ static uint8_t motor_safety_check(Motor_Base *motor)
     }
 
     return 1U;
+#endif
 }
 
 /**
@@ -201,6 +210,10 @@ static uint8_t motor_safety_check(Motor_Base *motor)
  */
 static uint8_t motor_limit_is_safe(const Motor_Base *motor)
 {
+#if !ARM_SOFTWARE_LIMIT_ENABLE
+    (void)motor;
+    return 1U;
+#else
     if (motor == NULL || motor->safety.enable == 0U) return 1U;
     if (motor->feedback_valid == 0U) return 1U;
     if (motor->offline_dev != NULL && Module_Offline_get_device_status(motor->offline_dev) == STATE_OFFLINE) return 1U;
@@ -221,6 +234,7 @@ static uint8_t motor_limit_is_safe(const Motor_Base *motor)
     }
 
     return 1U;
+#endif
 }
 
 /**
@@ -425,6 +439,10 @@ void Motor_Stop(Motor_Base *m)
  */
 uint8_t Motor_SafetyCheckBeforeApply(Motor_Base *motor)
 {
+#if !ARM_SOFTWARE_LIMIT_ENABLE
+    (void)motor;
+    return 1U;
+#else
     if (motor == NULL) return 0U;
 
     /* 当前电机本来就失能时，不需要重复做位置拦截。 */
@@ -447,6 +465,7 @@ uint8_t Motor_SafetyCheckBeforeApply(Motor_Base *motor)
     motor->setting.enableflag = 0U;
     motor_clear_output(motor);
     return 0U;
+#endif
 }
 
 /**

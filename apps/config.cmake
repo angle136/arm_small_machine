@@ -19,6 +19,9 @@ include(${CMAKE_CURRENT_LIST_DIR}/../modules/module_config.cmake)
 # ARM 重力补偿遥控安全门默认关闭；apps/<robot>/robot.cmake 可按目标机器人覆盖。
 set(ARM_GRAVITY_REMOTE_GUARD_ENABLE 0)
 
+# ARM 软件角度/raw 限位默认开启；apps/<robot>/robot.cmake 可按目标机器人覆盖。
+set(ARM_SOFTWARE_LIMIT_ENABLE 1)
+
 # 加载机器人差异配置
 include(${CMAKE_CURRENT_LIST_DIR}/${ROBOT}/robot.cmake)
 

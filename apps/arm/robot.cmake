@@ -10,6 +10,7 @@ set(MODULES_CHASSIS OFFLINE MOTOR)
 set(OFFLINE_BEEP_ENABLE 1)
 set(MOTOR_OFFLINE_ENABLE 1)
 set(ARM_GRAVITY_REMOTE_GUARD_ENABLE 1) # 1=启用 SBUS[7] 安全门，0=跳过该安全门
+set(ARM_SOFTWARE_LIMIT_ENABLE 0)       # 1=启用软件角度/raw限位及其失能，0=完全关闭软件限位
 
 # SBUS 接收机：USART3，25 字节标准 SBUS 数据；不启用图传遥控源。
 set(REMOTE_UART           huart3)
