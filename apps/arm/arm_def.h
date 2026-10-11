@@ -10,6 +10,34 @@
 #define ARM_MOTOR_COUNT                 7
 
 /*
+ * LoRa 发送坐标方向系数，输入是 joint_angle_rad；当前全部保持同向。
+ * 后续实机核对方向时只修改对应关节系数为 1.0f 或 -1.0f。
+ */
+#define ARM_LORA_J1_DIRECTION           1.0f
+#define ARM_LORA_J2_DIRECTION           1.0f
+#define ARM_LORA_J3_DIRECTION          - 1.0f
+#define ARM_LORA_J4_DIRECTION           1.0f
+#define ARM_LORA_J5_DIRECTION           -1.0f
+#define ARM_LORA_J6_DIRECTION           1.0f
+#define ARM_LORA_J7_DIRECTION           -1.0f
+
+/* 重装机器人接收端 J1~J7 指令范围，单位 rad。 */
+#define ARM_LORA_J1_MIN_RAD             (-6.28318530718f)
+#define ARM_LORA_J1_MAX_RAD             6.28318530718f
+#define ARM_LORA_J2_MIN_RAD             (-1.9f)
+#define ARM_LORA_J2_MAX_RAD             1.8f
+#define ARM_LORA_J3_MIN_RAD             (-3.2f)
+#define ARM_LORA_J3_MAX_RAD             3.0f
+#define ARM_LORA_J4_MIN_RAD             (-6.28318530718f)
+#define ARM_LORA_J4_MAX_RAD             6.28318530718f
+#define ARM_LORA_J5_MIN_RAD             (-2.1f)
+#define ARM_LORA_J5_MAX_RAD             2.7f
+#define ARM_LORA_J6_MIN_RAD             (-6.28318530718f)
+#define ARM_LORA_J6_MAX_RAD             6.28318530718f
+#define ARM_LORA_J7_MIN_RAD             (-2.0f)
+#define ARM_LORA_J7_MAX_RAD             2.0f
+
+/*
  * 临时输出力矩硬限幅，单位 N·m。
  *
  * 用于重力补偿探索阶段，防止试参时力矩过大导致机械臂快速运动或损伤结构。

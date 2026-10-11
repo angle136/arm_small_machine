@@ -1,6 +1,7 @@
 #include "robot_control.h"
 
 #include "arm_gravity.h"
+#include "arm_lora.h"
 #include "arm_motor.h"
 #include "arm_remote.h"
 #include "bsp_can_task.h"
@@ -44,8 +45,8 @@ static void arm_status_task(ULONG thread_input)
  *
  * @retval 无，线程创建后持续运行。
  *
- * @note 调用关系：由 robot_control_init() 创建；每 1 tick 依次刷新电机反馈、刷新 SBUS
- *       安全门，再执行重力补偿输出更新，调用顺序不可交换。
+ * @note 调用关系：由 robot_control_init() 创建；每 1 tick 依次刷新电机反馈、更新 LoRa
+ *       发送快照、刷新 SBUS 安全门，再执行重力补偿输出更新；反馈、安全门和输出的相对顺序不可交换。
  * @note 安全说明：最终输出前由 arm_gravity_update() 同时检查 CH7 和全部关节反馈。
  */
 static void arm_control_task(ULONG thread_input)
@@ -55,6 +56,7 @@ static void arm_control_task(ULONG thread_input)
     while (1)
     {
         arm_motor_feedback_update();
+        arm_lora_update();
         arm_remote_update();
         arm_gravity_update();
         tx_thread_sleep(1);
@@ -65,6 +67,7 @@ void robot_control_init(void)
 {
     BSP_CAN_TaskInit();
     arm_motor_init();
+    arm_lora_init();
     arm_remote_init();
     arm_gravity_init();
 

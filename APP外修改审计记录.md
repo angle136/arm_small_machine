@@ -189,3 +189,34 @@
 | --- | --- | --- | --- |
 | `modules/MOTOR/DAMIAO/motor_damiao.h` | 在 `DM_Motor_t` 中新增 `hardware_start_sent` 状态字段。 | 为每一台达妙电机独立保存 START 命令是否已入队；达妙没有启动确认帧，因此该字段不冒充硬件 ACK，也避免用全局状态误启动其它电机。 | 已用 STM32F407 `board/dji_c` 的生成编译命令验证头文件可用。 |
 | `modules/MOTOR/DAMIAO/motor_damiao.c` | 将 `DM_CMD_MOTOR_START/STOP` 同步逻辑放入已有 `dm_apply()`；仅当当前对象软件 `enableflag=1`、反馈有效、在线且安全检查通过时发送一次 START；失能、掉线、反馈无效或安全故障时发送一次 STOP；START 所在周期不发送正常控制帧。 | 让 `Motor_Start()` 保持软件层职责，由现有电机调度线程完成逐电机硬件启停；保证 J5 的启动不会遍历或带起 J2/J3/J6/J7 等其它电机。 | 已直接编译 `motor_damiao.c` 和 arm APP 源文件；正常 Ninja 全量构建仍卡在 `Re-checking globbed directories`，未以该命令作为通过依据。 |
+
+## 2026-10-10：移植 LoRa 模块并接入机械臂发送端
+
+### 本轮主动修改
+
+| 文件 | 修改内容 | 目的 | 风险与验证 |
+| --- | --- | --- | --- |
+| `modules/LORA/module_lora.c` / `modules/LORA/module_lora.h` / `modules/LORA/README.md` | 从参考工程移植塔石 L33 LoRa 模块，保留注册表、ThreadX 线程、小端序序列化、`AA 55 LEN SEQ PAYLOAD CRC8` 帧协议和收发能力；新增 `LORA_RX_ENABLE` 以允许当前发送端关闭接收解析。 | 以固定周期发送 APP 注册的持久化变量，并保持与重装机器人接收端协议一致；当前 ARM 配置仅发送，不让接收数据覆盖发送数组。 | 模块独占一个 UART；DMA 发送缓冲区必须位于 DMA 可访问区；两端串口参数、空中速率和信道必须一致。新增 C/H 的 clang-format 检查与 `git diff --check` 均通过；按要求未构建。 |
+| `modules/CMakeLists.txt` / `modules/module_config.cmake` / `modules/module_init.c` | 增加 LORA 条件编译源、默认参数和框架初始化入口。 | 让模块仍按仓库现有的模块开关机制构建和初始化，未启用 LORA 的其它机器人保持原行为。 | 若启用 LORA 却未配置 UART 或 M0/M1 GPIO，配置生成后会编译失败；当前 ARM 已显式配置，模块开关、生成宏、条件源和初始化入口已完成静态闭环检查；按要求未构建。 |
+
+本轮未修改 `board/**`、CAN 或电机调度文件。USART1（PA9 TX、PB7 RX）及其 DMA 已由现有 `board/dji_c` 配置提供；当前 ARM 未启用会占用 USART1 的图传、裁判系统或 WT606。ARM APP 将 LoRa M0/M1 设为 PE13/PE9，运行时会把这两个原 TIM1 通道引脚改为普通 GPIO，因此不可再同时作为 PWM 使用。
+
+## 2026-10-11：LoRa 发送端 USART1 波特率闭环和发送诊断
+
+| 文件 | 修改内容 | 目的 | 风险与验证 |
+| --- | --- | --- | --- |
+| `board/dji_c/Src/usart.c`、`board/dji_c/base.ioc` | 将 USART1 板级初始波特率从 921600 改为 LoRa 目标值 115200。 | 消除板级初始化与 LoRa 模块运行配置不一致，避免发送端仍以旧波特率输出导致接收端直连只能收到 `FE/FF` 类乱码。 | USART1 当前由 ARM LoRa 独占；其他启用 USART1 的机器人需复核自己的串口配置。按项目规则未构建。 |
+| `modules/LORA/module_lora.c` | 增加发送尝试、成功、失败计数，并每秒打印 UART 波特率、BRR、状态、错误码及 TX DMA 状态/NDTR。 | 区分未启动、DMA 发送失败和实际完成发送，支持直连现场定位。 | 只增加低频 RTT 日志和计数，不改变帧格式、发送周期或载荷。按项目规则未构建。 |
+
+## 2026-10-11：LoRa 发送端迁移到 USART6
+
+| 文件 | 修改内容 | 目的 | 风险与验证 |
+| --- | --- | --- | --- |
+| `apps/arm/robot.cmake` | 将 ARM LoRa 的 UART 绑定从 `huart1` 改为 `huart6`，对应 `PG14(TX)` / `PG9(RX)`。 | 改用发送板 USART6 输出 LoRa 数据。 | ARM 当前未启用同样使用 `huart6` 的 VOFA、图传或裁判模块；LoRa 仍为 115200 8N1、TX DMA 发送。按项目规则未构建。 |
+| `board/dji_c/Src/usart.c`、`board/dji_c/base.ioc` | USART1 恢复为迁移 LoRa 前的 921600；USART6 保持已有的 115200 8N1 和 DMA 配置。 | LoRa 已不再使用 USART1，撤销此前为 LoRa 增加的板级 USART1 全局改动，避免影响未来 USART1 使用者。 | USART6 TX 使用 DMA2 Stream6；仅做静态检查，按项目规则未构建。 |
+
+## 2026-10-11：清理 LoRa 发送端排障日志
+
+| 文件 | 修改内容 | 目的 | 风险与验证 |
+| --- | --- | --- | --- |
+| `modules/LORA/module_lora.c` | 删除 TX 尝试/成功/失败计数、每秒 UART/DMA 诊断日志及详细启动诊断；保留 DMA 可访问发送缓冲区、帧协议、发送失败返回值和 USART6 配置。 | 无线收发链路验证完成后移除临时排障负担，为后续方向修正保留干净运行路径。 | 不改变 37 字节帧、CRC8、序号、50 ms 周期或载荷顺序；按项目规则未构建。 |
