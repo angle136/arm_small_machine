@@ -49,7 +49,11 @@ static void arm_gravity_calculate(Arm_Gravity_Result_t *result)
                            ARM_J3_WRIST_ARM_M * sinf(result->q2 + result->q3 + result->q5)) +
                       ARM_J3_GRAVITY_COM * sinf(result->q2 + result->q3);
     result->tau4_nm = ARM_J4_GRAVITY_COUPLE_SCALE * ARM_J5_GRAVITY_COM * sinf(result->q2 + result->q3) * sinf(result->q5) * sinf(result->q4);
-    result->tau5_nm = ARM_J5_GRAVITY_COM * sinf(result->q5 + result->q2 + result->q3) * cosf(result->q4 * sinf(result->q2 + result->q3));
+    const float s = result->q2 + result->q3;
+    const float sin_s = sinf(s);
+    const float cos_s = cosf(s);
+    const float q4_projection = cos_s * cos_s + sin_s * sin_s * cosf(result->q4);
+    result->tau5_nm = ARM_J5_GRAVITY_COM * sinf(result->q5 + s) * q4_projection;
 }
 
 /**

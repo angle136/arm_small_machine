@@ -3,7 +3,7 @@
 
 include(${CMAKE_CURRENT_LIST_DIR}/../../modules/module_config.cmake)
 
-set(MODULES_SINGLE OFFLINE REMOTE MOTOR)
+set(MODULES_SINGLE OFFLINE REMOTE MOTOR LORA)
 set(MODULES_GIMBAL  OFFLINE MOTOR)
 set(MODULES_CHASSIS OFFLINE MOTOR)
 
@@ -16,3 +16,15 @@ set(ARM_SOFTWARE_LIMIT_ENABLE 0)       # 1=启用软件角度/raw限位及其失
 set(REMOTE_UART           huart3)
 set(REMOTE_SOURCE         1)
 set(REMOTE_VT_SOURCE      0)
+
+# 塔石 L33 发送端：USART6=PG14/PG9，M0/M1 复用空闲 TIM1 引脚 PE13/PE9。
+set(LORA_UART              huart6)
+set(LORA_M0_GPIO_PORT      GPIOE)
+set(LORA_M0_GPIO_PIN       GPIO_PIN_13)
+set(LORA_M1_GPIO_PORT      GPIOE)
+set(LORA_M1_GPIO_PIN       GPIO_PIN_9)
+set(LORA_AUX_ENABLE        0)
+set(LORA_TX_ENABLE         1)
+set(LORA_RX_ENABLE         0)
+set(LORA_TX_INTERVAL_MS    50)
+set(LORA_OFFLINE_ENABLE    0)
