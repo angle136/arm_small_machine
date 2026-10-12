@@ -290,7 +290,10 @@ static void dm_apply(Motor_Base *base)
         (base->offline_dev != NULL && Module_Offline_get_device_status(base->offline_dev) == STATE_OFFLINE);
     uint8_t     safety_ok = Motor_SafetyCheckBeforeApply(base);
     uint8_t     output_allowed =
-        (offline == 0U && base->feedback_valid != 0U && base->setting.enableflag != 0U && safety_ok != 0U) ? 1U : 0U;
+        (offline == 0U && motor->measure.Error_Code == DM_NO_ERROR && base->feedback_valid != 0U && base->setting.enableflag != 0U &&
+         safety_ok != 0U)
+            ? 1U
+            : 0U;
 
     if (output_allowed == 0U)
     {
