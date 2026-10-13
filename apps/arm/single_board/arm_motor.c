@@ -57,28 +57,6 @@ static uint8_t arm_motor_feedback_online(const Motor_Base *base)
 }
 
 /**
- * @brief 判断达妙反馈是否可作为机械臂在线反馈。
- * @param motor 输入，达妙电机对象指针。
- * @return uint8_t 无通信离线且无达妙错误码返回 1，否则返回 0。
- */
-static uint8_t arm_dm_feedback_online(const DM_Motor_t *motor)
-{
-    if (motor == NULL || motor->measure.Error_Code != DM_NO_ERROR) return 0U;
-    return arm_motor_feedback_online(&motor->base);
-}
-
-/**
- * @brief 判断达妙反馈是否可用于重力模型。
- * @param motor 输入，达妙电机对象指针。
- * @return uint8_t 收到有效反馈且无达妙错误码返回 1，否则返回 0。
- */
-static uint8_t arm_dm_feedback_valid(const DM_Motor_t *motor)
-{
-    if (motor == NULL || motor->base.feedback_valid == 0U || motor->measure.Error_Code != DM_NO_ERROR) return 0U;
-    return 1U;
-}
-
-/**
  * @brief 将角度限制到 [-pi, pi]。
  * @param angle_rad 输入，待归一化角度，单位 rad。
  * @return float 归一化后的角度，单位 rad。
@@ -304,9 +282,8 @@ void arm_motor_feedback_update(void)
         float                          joint_angle_rad  = arm_motor_joint_angle(joint_index, motor->base.measure.single_round_angle);
         float                          joint_speed_rad_s = arm_motor_joint_speed(joint_index, motor->base.measure.speed_rad);
 
-        /* 达妙故障帧虽然仍有位置数据，但不能作为重力模型的可用反馈。 */
-        feedback->valid             = arm_dm_feedback_valid(motor);
-        feedback->online            = arm_dm_feedback_online(motor);
+        feedback->valid             = motor->base.feedback_valid;
+        feedback->online            = arm_motor_feedback_online(&motor->base);
         feedback->enabled           = motor->base.setting.enableflag;
         feedback->feedback_id       = motor->measure.id;
         feedback->tx_id             = (can_dev != NULL) ? can_dev->tx_id : 0U;
@@ -414,10 +391,9 @@ void arm_motor_log_status(void)
         float joint_angle = arm_motor_joint_angle(g_dm_snapshot_index[i], raw_angle);
         float joint_speed = arm_motor_joint_speed(g_dm_snapshot_index[i], motor->base.measure.speed_rad);
 
-        LOG_I("%s DM on=%u v=%u en=%u hw_cmd=%u id=%u err=%u raw=%.3f q=%.3f dq=%.3f tau=%.3f T=%u/%u", g_dm_joint_names[i],
-              (unsigned)arm_dm_feedback_online(motor), (unsigned)arm_dm_feedback_valid(motor),
-              (unsigned)motor->base.setting.enableflag, (unsigned)motor->hardware_start_sent, (unsigned)motor->measure.id,
-              (unsigned)motor->measure.Error_Code, raw_angle, joint_angle,
+        LOG_I("%s DM on=%u v=%u en=%u hw_cmd=%u id=%u raw=%.3f q=%.3f dq=%.3f tau=%.3f T=%u/%u", g_dm_joint_names[i],
+              (unsigned)arm_motor_feedback_online(&motor->base), (unsigned)motor->base.feedback_valid,
+              (unsigned)motor->base.setting.enableflag, (unsigned)motor->hardware_start_sent, (unsigned)motor->measure.id, raw_angle, joint_angle,
               joint_speed, motor->base.measure.torque_nm, (unsigned)motor->measure.T_Mos, (unsigned)motor->measure.T_Rotor);
     }
 
