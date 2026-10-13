@@ -13,3 +13,7 @@ cmake-build-*/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Local project notes (keep out of the remote repository)
+/需求文档开头_项目规则与当前目标.md
+/机械臂重力补偿本轮修改复盘_2026-10-13.md
