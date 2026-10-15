@@ -102,20 +102,28 @@ static TX_SEMAPHORE g_nrf_irq_sem; /* IRQ → 接收线程 */
 /* 通信地址(收发两端必须一致; 可在 robot.cmake 里用 NRF24L01_ADDR 覆盖) */
 static const uint8_t kAddress[5] = {NRF24L01_ADDR};
 
+/* 最近一次 SPI 事务的结果。0 表示 DMA/总线事务完成，非 0 表示失败。
+ * nRF24L01 在 SPI 失败时常会留下 0xFF，不能把这个值当成 STATUS。 */
+static uint8_t g_nrf_spi_error;
+
 /* ================= 底层: CE 控制(宏实现, 省去简单函数的调用/栈开销) ================= */
 #define nrf_ce_high() HAL_GPIO_WritePin(NRF24L01_CE_PORT, NRF24L01_CE_PIN, GPIO_PIN_SET)
 #define nrf_ce_low()  HAL_GPIO_WritePin(NRF24L01_CE_PORT, NRF24L01_CE_PIN, GPIO_PIN_RESET)
 
 /* ================= 寄存器层: SPI 指令封装 ================= */
 
-/* 一次传输: 发 g_nrf_tx, 收 g_nrf_rx; 宏实现, 不再多一层函数调用 */
-#define nrf_spi(len)  BSP_SPI_TransReceive(g_nrf.spi_dev, g_nrf_tx, g_nrf_rx, (uint16_t)(len), NRF24L01_SPI_TIMEOUT)
+/* 一次传输: 发 g_nrf_tx, 收 g_nrf_rx。保存 BSP 返回值，避免 SPI 失败被误认为有效状态。 */
+static uint8_t nrf_spi(uint8_t len)
+{
+    g_nrf_spi_error = BSP_SPI_TransReceive(g_nrf.spi_dev, g_nrf_tx, g_nrf_rx, (uint16_t)len, NRF24L01_SPI_TIMEOUT);
+    return g_nrf_spi_error;
+}
 
 /* 发命令帧: [0]=命令, [1..]=datalen 字节数据(数据由调用方先填好) */
-static inline void nrf_cmd(uint8_t cmd, uint8_t datalen)
+static inline uint8_t nrf_cmd(uint8_t cmd, uint8_t datalen)
 {
     g_nrf_tx[0] = cmd;
-    nrf_spi(1 + datalen);
+    return nrf_spi((uint8_t)(1 + datalen));
 }
 /**
  * @brief 读寄存器(1字节)
@@ -130,10 +138,10 @@ static inline uint8_t nrf_read_reg(uint8_t reg)
 /**
  * @brief 写寄存器(1字节)
  */
-static inline void nrf_write_reg(uint8_t reg, uint8_t value)
+static inline uint8_t nrf_write_reg(uint8_t reg, uint8_t value)
 {
     g_nrf_tx[1] = value;
-    nrf_cmd(NRF24L01_W_REGISTER | reg, 1);
+    return nrf_cmd(NRF24L01_W_REGISTER | reg, 1);
 }
 
 /**
@@ -142,25 +150,29 @@ static inline void nrf_write_reg(uint8_t reg, uint8_t value)
  */
 static int8_t nrf_write_reg_checked(uint8_t reg, uint8_t value)
 {
+    uint8_t readback = 0xFF;
+
     for (uint8_t i = 0; i < 3; i++)
     {
-        nrf_write_reg(reg, value);
-        if (nrf_read_reg(reg) == value)
+        if (nrf_write_reg(reg, value) != 0) continue;
+        readback = nrf_read_reg(reg);
+        if (g_nrf_spi_error == 0 && readback == value)
         {
             return 0;
         }
     }
-    LOG_E("Reg 0x%02X write verify failed: want=0x%02X got=0x%02X", reg, value, nrf_read_reg(reg));
+    LOG_E("Reg 0x%02X write verify failed: want=0x%02X got=0x%02X spi_err=%u", reg, value, readback,
+          g_nrf_spi_error);
     return -1;
 }
 
 /**
  * @brief 写寄存器(多字节, 如地址)
  */
-static inline void nrf_write_regs(uint8_t reg, const uint8_t *buf, uint8_t len)
+static inline uint8_t nrf_write_regs(uint8_t reg, const uint8_t *buf, uint8_t len)
 {
     memcpy(&g_nrf_tx[1], buf, len);
-    nrf_cmd(NRF24L01_W_REGISTER | reg, len);
+    return nrf_cmd(NRF24L01_W_REGISTER | reg, len);
 }
 
 #if NRF24L01_RX_ENABLE
@@ -178,21 +190,21 @@ static inline void nrf_read_rx_payload(uint8_t len)
 /**
  * @brief 发送 g_nrf_tx[1..] 中的TX载荷(调用方已组包)
  */
-static inline void nrf_write_tx_payload(uint8_t len) { nrf_cmd(NRF24L01_W_TX_PAYLOAD, len); }
+static inline uint8_t nrf_write_tx_payload(uint8_t len) { return nrf_cmd(NRF24L01_W_TX_PAYLOAD, len); }
 #endif /* NRF24L01_TX_ENABLE */
 
 /**
  * @brief 发送单字节命令(清FIFO等)
  */
-static inline void nrf_send_cmd(uint8_t cmd) { nrf_cmd(cmd, 0); }
+static inline uint8_t nrf_send_cmd(uint8_t cmd) { return nrf_cmd(cmd, 0); }
 
 /**
  * @brief 激活FEATURE寄存器(nRF24L01+必需, 否则DPL/ACK载荷等功能不可用)
  */
-static inline void nrf_activate_feature(void)
+static inline uint8_t nrf_activate_feature(void)
 {
     g_nrf_tx[1] = NRF24L01_ACTIVATE_DATA;
-    nrf_cmd(NRF24L01_ACTIVATE, 1);
+    return nrf_cmd(NRF24L01_ACTIVATE, 1);
 }
 
 /* 以下状态/模式操作只有收发线程会用到(两个角色都关时不必编译) */
@@ -213,12 +225,13 @@ static inline uint8_t nrf_read_status(void)
  * @brief 读改写 CONFIG: 置位 set / 清零 clr, 并始终保证 CRC(2字节)+上电
  * @note  显式置 CRCO 防止读改写过程中丢失 CRC 宽度位, 导致收发两端 CRC 不一致
  */
-static void nrf_config_update(uint8_t set, uint8_t clr)
+static uint8_t nrf_config_update(uint8_t set, uint8_t clr)
 {
     uint8_t cfg = nrf_read_reg(NRF24L01_CONFIG);
+    if (g_nrf_spi_error != 0) return 1;
     cfg |= (uint8_t)(NRF24L01_CONFIG_EN_CRC | NRF24L01_CONFIG_CRCO | NRF24L01_CONFIG_PWR_UP | set);
     cfg &= (uint8_t)~clr;
-    nrf_write_reg_checked(NRF24L01_CONFIG, cfg);
+    return (nrf_write_reg_checked(NRF24L01_CONFIG, cfg) == 0) ? 0 : 1;
 }
 
 #if NRF24L01_RX_ENABLE
@@ -226,7 +239,7 @@ static void nrf_config_update(uint8_t set, uint8_t clr)
 static void nrf_set_rx_mode(void)
 {
     nrf_ce_low();
-    nrf_config_update(NRF24L01_CONFIG_PRIM_RX, 0);
+    (void)nrf_config_update(NRF24L01_CONFIG_PRIM_RX, 0);
     nrf_ce_high();
 }
 #endif /* NRF24L01_RX_ENABLE */
@@ -247,33 +260,39 @@ static void nrf_gather_tx(void)
 }
 
 /* 进入TX模式: CE低退出RX, 清PRIM_RX */
-static void nrf_enter_tx(void)
+static uint8_t nrf_enter_tx(void)
 {
     nrf_ce_low();
-    nrf_config_update(0, NRF24L01_CONFIG_PRIM_RX);
+    return nrf_config_update(0, NRF24L01_CONFIG_PRIM_RX);
 }
 
 /* 等发送结束: 轮询 STATUS 直到 TX_DS/MAX_RT, 返回最后读到的 STATUS
  * @note  超时也返回"最后读到的状态"而不是硬编 MAX_RT —— 线程被抢占时标志可能已置位,
  *        硬编会把成功报成失败(低优先级下"通一会断"的根因) */
-static uint8_t nrf_wait_tx_done(void)
+static uint8_t nrf_wait_tx_done(uint8_t *spi_error)
 {
     ULONG start = tx_time_get();
+    *spi_error = 0;
 
     for (;;)
     {
         uint8_t status = nrf_read_status();
+        if (g_nrf_spi_error != 0)
+        {
+            *spi_error = 1;
+            return status;
+        }
         if (status & (NRF24L01_STATUS_TX_DS | NRF24L01_STATUS_MAX_RT)) return status;
         if ((tx_time_get() - start) >= NRF24L01_TX_WAIT_MS) return status;
     }
 }
 
 /* 发送结果统计: 只有收到 TX_DS(ACK) 才算成功; MAX_RT 与超时都算失败 */
-static void nrf_check_tx_result(uint8_t tx_status)
+static void nrf_check_tx_result(uint8_t tx_status, uint8_t spi_error)
 {
     g_nrf_tx_attempts++;
 
-    if (tx_status & NRF24L01_STATUS_TX_DS)
+    if (!spi_error && (tx_status & NRF24L01_STATUS_TX_DS) && !(tx_status & NRF24L01_STATUS_MAX_RT))
     {
         g_nrf_tx_ok++;
         if (g_nrf_tx_attempts == 1U)
@@ -293,17 +312,20 @@ static void nrf_check_tx_result(uint8_t tx_status)
         g_nrf_tx_fail++;
         if (g_nrf_tx_attempts == 1U)
         {
-            LOG_W("TX started but no ACK: status=0x%02X payload=%u, check receiver/channel/address", tx_status,
-                  g_nrf.total_size);
+            if (spi_error)
+                LOG_W("TX SPI error: status=0x%02X payload=%u, check power/wiring/DMA", tx_status, g_nrf.total_size);
+            else
+                LOG_W("TX started but no ACK: status=0x%02X payload=%u, check receiver/channel/address", tx_status,
+                      g_nrf.total_size);
         }
         /* 每50次失败打印一次, 避免刷屏 */
         if ((g_nrf_tx_fail % 50U) == 1U)
-            LOG_W("TX failed(no ACK): attempt=%lu ok=%lu fail=%lu status=0x%02X, check receiver/channel/address",
+            LOG_W("TX failed(%s): attempt=%lu ok=%lu fail=%lu status=0x%02X", spi_error ? "SPI" : "no ACK",
                   (unsigned long)g_nrf_tx_attempts, (unsigned long)g_nrf_tx_ok, (unsigned long)g_nrf_tx_fail,
                   tx_status);
-        nrf_send_cmd(NRF24L01_FLUSH_TX);
+        if (!spi_error) nrf_send_cmd(NRF24L01_FLUSH_TX);
     }
-    nrf_write_reg(NRF24L01_STATUS, NRF24L01_STATUS_TX_DS | NRF24L01_STATUS_MAX_RT);
+    if (!spi_error) nrf_write_reg(NRF24L01_STATUS, NRF24L01_STATUS_TX_DS | NRF24L01_STATUS_MAX_RT);
 }
 
 /* 组包+发送一次(仅线程内部调用) */
@@ -320,15 +342,21 @@ static void nrf_trigger_tx(void)
 
     nrf_gather_tx(); /* 1. 读变量当前值 → g_nrf_tx[1..] */
 
-    nrf_enter_tx(); /* 2. 切TX模式(CE低退出RX) */
-    nrf_send_cmd(NRF24L01_FLUSH_TX);
-    nrf_write_tx_payload((uint8_t)g_nrf.total_size);
+    uint8_t spi_error = 0;
+    uint8_t tx_status = 0;
 
-    nrf_ce_high();                          /* 3. CE脉冲触发发送(ESB, 保持高直至完成) */
-    uint8_t tx_status = nrf_wait_tx_done(); /* 4. 等 TX_DS/MAX_RT, 不再死等1ms */
+    if (nrf_enter_tx() != 0) spi_error = 1; /* 2. 切TX模式(CE低退出RX) */
+    if (!spi_error && nrf_send_cmd(NRF24L01_FLUSH_TX) != 0) spi_error = 1;
+    if (!spi_error && nrf_write_tx_payload((uint8_t)g_nrf.total_size) != 0) spi_error = 1;
+
+    if (!spi_error)
+    {
+        nrf_ce_high();                          /* 3. CE脉冲触发发送(ESB, 保持高直至完成) */
+        tx_status = nrf_wait_tx_done(&spi_error); /* 4. 等 TX_DS/MAX_RT, 不再死等1ms */
+    }
     nrf_ce_low();
 
-    nrf_check_tx_result(tx_status); /* 5. 统计+清标志 */
+    nrf_check_tx_result(tx_status, spi_error); /* 5. 统计+清标志 */
 }
 
 #endif /* NRF24L01_TX_ENABLE */
@@ -475,6 +503,8 @@ static void nrf_gpio_init(void)
 
 int Module_NRF24L01_Init(void)
 {
+    uint8_t init_ok = 1;
+
     if (g_nrf.initialized) return 0;
 
     /* 静态 g_nrf 已在 .bss 清零, 无需 memset(且 memset 会清掉已注册项) */
@@ -527,41 +557,44 @@ int Module_NRF24L01_Init(void)
     /* ---- 3. nRF24L01 寄存器配置 ---- */
     tx_thread_sleep(100); /* 等待模块上电稳定(系统tick=1ms) */
 
-    nrf_write_reg_checked(NRF24L01_CONFIG, NRF24L01_CONFIG_EN_CRC |     /* 使能CRC */
-                                               NRF24L01_CONFIG_CRCO |   /* CRC=2字节(收发两端必须一致) */
-                                               NRF24L01_CONFIG_PWR_UP); /* 上电(从掉电到待机需1.5ms, 提前稳定) */
+    if (nrf_write_reg_checked(NRF24L01_CONFIG, NRF24L01_CONFIG_EN_CRC |     /* 使能CRC */
+                                                        NRF24L01_CONFIG_CRCO |   /* CRC=2字节(收发两端必须一致) */
+                                                        NRF24L01_CONFIG_PWR_UP) != 0)
+        init_ok = 0;
 
-    nrf_write_reg_checked(NRF24L01_EN_AA, 0x01);                     /* 通道0自动应答 */
-    nrf_write_reg_checked(NRF24L01_EN_RXADDR, 0x01);                 /* 使能通道0 */
-    nrf_write_reg_checked(NRF24L01_SETUP_AW, NRF24L01_ADDR_WIDTH_5); /* 5字节地址 */
+    if (nrf_write_reg_checked(NRF24L01_EN_AA, 0x01) != 0) init_ok = 0; /* 通道0自动应答 */
+    if (nrf_write_reg_checked(NRF24L01_EN_RXADDR, 0x01) != 0) init_ok = 0; /* 使能通道0 */
+    if (nrf_write_reg_checked(NRF24L01_SETUP_AW, NRF24L01_ADDR_WIDTH_5) != 0) init_ok = 0; /* 5字节地址 */
 
     /* 自动重传: 间隔250us*(DELAY+1), 次数COUNT */
     uint8_t retr = (NRF24L01_RETR_DELAY << 4) | (NRF24L01_RETR_COUNT & 0x0F);
-    nrf_write_reg_checked(NRF24L01_SETUP_RETR, retr);
+    if (nrf_write_reg_checked(NRF24L01_SETUP_RETR, retr) != 0) init_ok = 0;
 
-    nrf_write_reg_checked(NRF24L01_RF_CH, NRF24L01_RF_CHANNEL);
+    if (nrf_write_reg_checked(NRF24L01_RF_CH, NRF24L01_RF_CHANNEL) != 0) init_ok = 0;
 
     /* 射频设置: 速率+功率 */
     uint8_t rf_setup = 0;
     if (NRF24L01_RF_DATARATE == 2) rf_setup |= (1 << 3); /* 2Mbps */
     /* 1Mbps时RF_DR位=0 */
     rf_setup |= ((NRF24L01_RF_POWER & 0x03) << 1); /* 发射功率 */
-    nrf_write_reg_checked(NRF24L01_RF_SETUP, rf_setup);
+    if (nrf_write_reg_checked(NRF24L01_RF_SETUP, rf_setup) != 0) init_ok = 0;
 
     /* 动态包长(DPL)配置 — 必须先ACTIVATE才能写FEATURE寄存器 */
-    nrf_activate_feature();
-    nrf_write_reg_checked(NRF24L01_FEATURE, NRF24L01_FEATURE_EN_DPL |         /* 使能动态包长 */
-                                                NRF24L01_FEATURE_EN_ACK_PAY); /* 使能应答载荷 */
-    nrf_write_reg_checked(NRF24L01_DYNPD, 0x01);                              /* 通道0动态包长 */
+    if (nrf_activate_feature() != 0) init_ok = 0;
+    if (nrf_write_reg_checked(NRF24L01_FEATURE, NRF24L01_FEATURE_EN_DPL |         /* 使能动态包长 */
+                                                        NRF24L01_FEATURE_EN_ACK_PAY) != 0)
+        init_ok = 0;
+    if (nrf_write_reg_checked(NRF24L01_DYNPD, 0x01) != 0) init_ok = 0; /* 通道0动态包长 */
 
     /* 地址配置(收发两端必须一致) */
-    nrf_write_regs(NRF24L01_TX_ADDR, kAddress, 5);
-    nrf_write_regs(NRF24L01_RX_ADDR_P0, kAddress, 5);
+    if (nrf_write_regs(NRF24L01_TX_ADDR, kAddress, 5) != 0) init_ok = 0;
+    if (nrf_write_regs(NRF24L01_RX_ADDR_P0, kAddress, 5) != 0) init_ok = 0;
 
     /* 清FIFO和中断标志 */
-    nrf_send_cmd(NRF24L01_FLUSH_TX);
-    nrf_send_cmd(NRF24L01_FLUSH_RX);
-    nrf_write_reg(NRF24L01_STATUS, NRF24L01_STATUS_RX_DR | NRF24L01_STATUS_TX_DS | NRF24L01_STATUS_MAX_RT);
+    if (nrf_send_cmd(NRF24L01_FLUSH_TX) != 0) init_ok = 0;
+    if (nrf_send_cmd(NRF24L01_FLUSH_RX) != 0) init_ok = 0;
+    if (nrf_write_reg(NRF24L01_STATUS, NRF24L01_STATUS_RX_DR | NRF24L01_STATUS_TX_DS | NRF24L01_STATUS_MAX_RT) != 0)
+        init_ok = 0;
 
     /* 进入RX模式(常驻接收); 仅发送角色不进入RX, 保持待机-I */
 #if NRF24L01_RX_ENABLE
@@ -570,23 +603,28 @@ int Module_NRF24L01_Init(void)
 
     /* ---- 3.5 自检: 回读关键寄存器确认 MCU 已经能读写 NRF24L01 ---- */
     uint8_t probe_config  = nrf_read_reg(NRF24L01_CONFIG);
+    uint8_t probe_config_err = g_nrf_spi_error;
     uint8_t probe_rf_ch   = nrf_read_reg(NRF24L01_RF_CH);
+    uint8_t probe_rf_ch_err = g_nrf_spi_error;
     uint8_t probe_feature = nrf_read_reg(NRF24L01_FEATURE);
+    uint8_t probe_feature_err = g_nrf_spi_error;
     uint8_t expected_cfg  = NRF24L01_CONFIG_EN_CRC | NRF24L01_CONFIG_CRCO | NRF24L01_CONFIG_PWR_UP;
 #if NRF24L01_RX_ENABLE
     expected_cfg |= NRF24L01_CONFIG_PRIM_RX;
 #endif
     LOG_I("SPI probe: CONFIG=0x%02X RF_CH=0x%02X FEATURE=0x%02X DMA(tx=%u rx=%u)", probe_config, probe_rf_ch,
           probe_feature, NRF24L01_SPI.hdmatx != NULL, NRF24L01_SPI.hdmarx != NULL);
-    if (probe_config == expected_cfg && probe_rf_ch == NRF24L01_RF_CHANNEL &&
-        probe_feature == (NRF24L01_FEATURE_EN_DPL | NRF24L01_FEATURE_EN_ACK_PAY))
+    if (init_ok && !probe_config_err && !probe_rf_ch_err && !probe_feature_err && probe_config == expected_cfg &&
+        probe_rf_ch == NRF24L01_RF_CHANNEL && probe_feature == (NRF24L01_FEATURE_EN_DPL | NRF24L01_FEATURE_EN_ACK_PAY))
     {
         LOG_I("NRF24L01 communication OK: SPI register read/write verified");
     }
     else
     {
-        LOG_E("NRF24L01 communication check failed: expected CONFIG=0x%02X RF_CH=%u FEATURE=0x%02X",
-              expected_cfg, NRF24L01_RF_CHANNEL, NRF24L01_FEATURE_EN_DPL | NRF24L01_FEATURE_EN_ACK_PAY);
+        LOG_E("NRF24L01 communication check failed: expected CONFIG=0x%02X RF_CH=%u FEATURE=0x%02X (spi=%u/%u/%u init=%u)",
+              expected_cfg, NRF24L01_RF_CHANNEL, NRF24L01_FEATURE_EN_DPL | NRF24L01_FEATURE_EN_ACK_PAY,
+              probe_config_err, probe_rf_ch_err, probe_feature_err, init_ok);
+        return -1;
     }
 
     /* ---- 4. OFFLINE 集成 ---- */

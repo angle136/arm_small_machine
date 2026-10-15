@@ -14,8 +14,8 @@
  * 后续实机核对方向时只修改对应关节系数为 1.0f 或 -1.0f。
  */
 #define ARM_NRF24L01_J1_DIRECTION       1.0f
-#define ARM_NRF24L01_J2_DIRECTION       -1.0f
-#define ARM_NRF24L01_J3_DIRECTION       1.0f
+#define ARM_NRF24L01_J2_DIRECTION       1.0f
+#define ARM_NRF24L01_J3_DIRECTION       -1.0f
 #define ARM_NRF24L01_J4_DIRECTION       1.0f
 #define ARM_NRF24L01_J5_DIRECTION       -1.0f
 #define ARM_NRF24L01_J6_DIRECTION       1.0f
