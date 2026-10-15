@@ -109,7 +109,7 @@ static float arm_motor_joint_angle(uint8_t joint_index, float raw_rad)
     case 2U:
         return ARM_J3_JOINT_DIR * (raw_rad - ARM_J3_ZERO_RAW_RAD);
     case 3U:
-        return ARM_J4_JOINT_DIR * arm_motor_wrap_to_pi(raw_rad - ARM_J4_ZERO_RAW_RAD);
+        return ARM_J4_JOINT_DIR * (raw_rad - ARM_J4_ZERO_RAW_RAD);
     case 4U:
         return ARM_J5_JOINT_DIR * (raw_rad - ARM_J5_ZERO_RAW_RAD);
     case 5U:

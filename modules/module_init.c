@@ -41,6 +41,9 @@
 #if MODULE_LORA
 #include "module_lora.h"
 #endif
+#if MODULE_NRF24L01
+#include "module_nrf24l01.h"
+#endif
 #if MODULE_VOFA
 #include "vofa.h"
 #endif
@@ -84,6 +87,12 @@ void MODULE_Init(void)
 #endif
 #if MODULE_LORA
     Module_Lora_Init();
+#endif
+#if MODULE_NRF24L01
+    if (Module_NRF24L01_Init() != 0)
+    {
+        LOG_E("NRF24L01 init failed");
+    }
 #endif
 #if MODULE_VOFA
     Module_VOFA_Init();

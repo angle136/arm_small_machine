@@ -63,6 +63,8 @@ extern I2C_HandleTypeDef  hi2c2;
 extern I2C_HandleTypeDef  hi2c3;
 extern DMA_HandleTypeDef  hdma_spi1_rx;
 extern DMA_HandleTypeDef  hdma_spi1_tx;
+extern DMA_HandleTypeDef  hdma_spi2_rx;
+extern DMA_HandleTypeDef  hdma_spi2_tx;
 extern SPI_HandleTypeDef  hspi1;
 extern SPI_HandleTypeDef  hspi2;
 extern TIM_HandleTypeDef  htim8;
@@ -234,6 +236,14 @@ void EXTI0_IRQHandler(void)
 }
 
 /**
+ * @brief This function handles EXTI line1 interrupt.
+ */
+void EXTI1_IRQHandler(void)
+{
+    HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_1);
+}
+
+/**
  * @brief This function handles EXTI line3 interrupt.
  */
 void EXTI3_IRQHandler(void)
@@ -287,6 +297,22 @@ void DMA1_Stream2_IRQHandler(void)
     /* USER CODE BEGIN DMA1_Stream2_IRQn 1 */
 
     /* USER CODE END DMA1_Stream2_IRQn 1 */
+}
+
+/**
+ * @brief This function handles DMA1 stream3 global interrupt.
+ */
+void DMA1_Stream3_IRQHandler(void)
+{
+    HAL_DMA_IRQHandler(&hdma_spi2_rx);
+}
+
+/**
+ * @brief This function handles DMA1 stream4 global interrupt.
+ */
+void DMA1_Stream4_IRQHandler(void)
+{
+    HAL_DMA_IRQHandler(&hdma_spi2_tx);
 }
 
 /**

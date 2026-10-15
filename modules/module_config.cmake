@@ -2,7 +2,7 @@
 # 各 apps/<robot>/robot.cmake 应先 include 本文件，再覆盖差异项。
 # 覆盖方式：直接 set(变量名 新值) 即可，无需前缀。
 
-# 可用模块列表 OFFLINE REMOTE BMI088 INS REFEREE SUPERCAP WT606 MOTOR BOARDCOMM VISION LORA VOFA
+# 可用模块列表 OFFLINE REMOTE BMI088 INS REFEREE SUPERCAP WT606 MOTOR BOARDCOMM VISION LORA VOFA NRF24L01
 
 # 默认模块列表
 set(MODULES_SINGLE   OFFLINE REMOTE BMI088 INS REFEREE SUPERCAP MOTOR)
@@ -73,6 +73,15 @@ set(LORA_AUX_ENABLE          1)      # 1=发送前检查 AUX，0=不接 AUX
 set(LORA_TX_INTERVAL_MS      50)     # 发送周期，默认 20 Hz
 set(LORA_TX_ENABLE           1)      # 1=启用发送，0=只接收
 set(LORA_RX_ENABLE           1)      # 1=启用接收解析，0=只发送
+
+# NRF24L01 默认参数（2.4 GHz 无线模块；默认不启用）
+set(NRF24L01_TASK_STACK_SIZE 1024)
+set(NRF24L01_TASK_PRIORITY   10)
+set(NRF24L01_TX_INTERVAL_MS  10)
+set(NRF24L01_TX_ENABLE       0)
+set(NRF24L01_RX_ENABLE       0)
+set(NRF24L01_OFFLINE_ENABLE  1)
+set(NRF24L01_ADDR            "0x11,0x22,0x33,0x44,0x55")
 
 # VOFA 默认参数
 # 注: VOFA 默认不在 MODULES_* 列表中(默认不启用)。如需启用, 在对应 MODULES_XXX 中加入 VOFA
