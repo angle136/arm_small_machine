@@ -22,7 +22,7 @@ BUFFER_SECTION static uint8_t     g_arm_link_payload[BOARD_LINK_PAYLOAD_MAX];
 
 /* 接收端坐标偏置，仅作用于发送值，不改变本机零点、限位或重力补偿。 */
 static const float g_arm_link_angle_offset_rad[ARM_MOTOR_COUNT] = {
-    -3.16830305f, 0.0f, 0.0f, -3.30041362f, 0.0f, 0.04309896f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.04309896f, 0.0f,
 };
 
 static void arm_send_feedback(void)
@@ -32,6 +32,12 @@ static void arm_send_feedback(void)
     for (uint32_t i = 0U; i < ARM_MOTOR_COUNT; ++i)
     {
         float value = feedback->joint[i].joint_angle_rad + g_arm_link_angle_offset_rad[i];
+
+        if (i == 1U) // 数组下标1对应J2
+        {
+            value = -value;
+        }
+
         memcpy(&g_arm_link_payload[i * sizeof(float)], &value, sizeof(value));
     }
 
