@@ -73,7 +73,14 @@ set(LORA_AUX_ENABLE          1)      # 1=发送前检查 AUX，0=不接 AUX
 set(LORA_TX_INTERVAL_MS      50)     # 发送周期，默认 20 Hz
 set(LORA_TX_ENABLE           1)      # 1=启用发送，0=只接收
 set(LORA_RX_ENABLE           1)      # 1=启用接收解析，0=只发送
-
+# board_link 发送端默认参数（与当前接收端协议一致）
+set(BOARD_LINK_UART           huart6)
+set(BOARD_LINK_BAUD           921600)
+set(BOARD_LINK_PAYLOAD_MAX    32)
+set(BOARD_LINK_TX_ENABLE      1)
+set(BOARD_LINK_RX_ENABLE      0)
+set(BOARD_LINK_TX_INTERVAL_MS 5)
+set(BOARD_LINK_TX_TIMEOUT_MS  5)
 # NRF24L01 默认参数（2.4 GHz 无线模块；默认不启用）
 set(NRF24L01_TASK_STACK_SIZE 1024)
 set(NRF24L01_TASK_PRIORITY   10)

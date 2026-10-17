@@ -12,8 +12,7 @@
 #define LOG_LVL LOG_LVL_INFO
 #include "ulog_def.h"
 
-#define ARM_PI_RAD     3.14159265354f
-#define ARM_TWO_PI_RAD 6.28318530708f
+#define ARM_PI_RAD 3.14159265354f
 
 typedef struct
 {
@@ -79,22 +78,9 @@ static uint8_t arm_dm_feedback_valid(const DM_Motor_t *motor)
 }
 
 /**
- * @brief 将角度限制到 [-pi, pi]。
- * @param angle_rad 输入，待归一化角度，单位 rad。
- * @return float 归一化后的角度，单位 rad。
- * @note 调用关系：由关节角换算调用；纯计算，无安全副作用。
- */
-static float arm_motor_wrap_to_pi(float angle_rad)
-{
-    while (angle_rad > ARM_PI_RAD) angle_rad -= ARM_TWO_PI_RAD;
-    while (angle_rad < -ARM_PI_RAD) angle_rad += ARM_TWO_PI_RAD;
-    return angle_rad;
-}
-
-/**
  * @brief 将驱动层角度换算为机械关节角。
  * @param joint_index 输入，0~6 对应 J1~J7。
- * @param raw_rad 输入，驱动层角度，单位 rad。
+ * @param raw_rad 输入，驱动层角度，单位 rad；J4 传累计角，其余关节传单圈/协议角。
  * @return float 软件零点和方向修正后的角度，单位 rad。
  * @note 调用关系：由反馈刷新和日志函数调用；纯计算，不下发控制命令。
  */
@@ -330,7 +316,7 @@ void arm_motor_feedback_update(void)
     {
         volatile Arm_Motor_Feedback_t *feedback          = &g_arm_feedback_snapshot.joint[3];
         Can_Device                    *can_dev           = (Can_Device *)g_j4_motor->base.transport_dev;
-        float                          joint_angle_rad   = arm_motor_joint_angle(3U, g_j4_motor->base.measure.single_round_angle);
+        float                          joint_angle_rad   = arm_motor_joint_angle(3U, g_j4_motor->base.measure.total_angle);
         float                          joint_speed_rad_s = arm_motor_joint_speed(3U, g_j4_motor->base.measure.speed_rad);
 
         feedback->online            = arm_motor_feedback_online(&g_j4_motor->base);
@@ -423,12 +409,13 @@ void arm_motor_log_status(void)
     if (g_j4_motor != NULL)
     {
         float raw_angle   = g_j4_motor->base.measure.single_round_angle;
-        float joint_angle = arm_motor_joint_angle(3U, raw_angle);
+        float total_angle = g_j4_motor->base.measure.total_angle;
+        float joint_angle = arm_motor_joint_angle(3U, total_angle);
         float joint_speed = arm_motor_joint_speed(3U, g_j4_motor->base.measure.speed_rad);
 
-        LOG_I("J4 GM6020 on=%u v=%u en=%u ecd=%u raw=%.3f q=%.3f dq=%.3f rpm=%.1f cur=%d T=%u",
+        LOG_I("J4 GM6020 on=%u v=%u en=%u ecd=%u raw=%.3f total=%.3f q=%.3f dq=%.3f rpm=%.1f cur=%d T=%u",
               (unsigned)arm_motor_feedback_online(&g_j4_motor->base), (unsigned)g_j4_motor->base.feedback_valid,
-              (unsigned)g_j4_motor->base.setting.enableflag, (unsigned)g_j4_motor->measure.ecd, raw_angle, joint_angle, joint_speed,
+              (unsigned)g_j4_motor->base.setting.enableflag, (unsigned)g_j4_motor->measure.ecd, raw_angle, total_angle, joint_angle, joint_speed,
               g_j4_motor->measure.speed_rpm, (int)g_j4_motor->measure.real_current, (unsigned)g_j4_motor->measure.temperature);
     }
 }
