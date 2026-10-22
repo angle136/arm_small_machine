@@ -277,9 +277,9 @@ static void psi_ctrl(DM_Motor_t *motor, float pos, float vel, float current)
  *
  * @note 调用关系：由 Motor_ApplyAll() 槽位调度调用；内部先同步达妙本体启停状态，
  *       再根据 mode_type 调用 mit_ctrl()、pos_speed_ctrl()、speed_ctrl() 或 psi_ctrl()。
- * @note 启停策略：enableflag 只表示软件请求；当本电机反馈有效、在线且通过安全检查时，
+ * @note 启停策略：enableflag 只表示软件请求；当本电机无错误码、反馈有效、在线且通过安全检查时，
  *       仅在 hardware_start_sent 为 0 时发送一次 MOTOR_START，并让本周期结束，下一周期再发送控制帧。
- *       软件失能、掉线、反馈无效或安全检查失败时，仅在 hardware_start_sent 为 1 时发送一次 MOTOR_STOP。
+ *       软件失能、错误码、掉线、反馈无效或安全检查失败时，仅在 hardware_start_sent 为 1 时发送一次 MOTOR_STOP。
  * @note 隔离性：hardware_start_sent 属于当前 DM_Motor_t 对象，Motor_DM_Cmd() 使用该对象自己的
  *       CAN 设备和发送 ID，不会启动链表中的其它电机。
  */
@@ -290,7 +290,10 @@ static void dm_apply(Motor_Base *base)
         (base->offline_dev != NULL && Module_Offline_get_device_status(base->offline_dev) == STATE_OFFLINE);
     uint8_t     safety_ok = Motor_SafetyCheckBeforeApply(base);
     uint8_t     output_allowed =
-        (offline == 0U && base->feedback_valid != 0U && base->setting.enableflag != 0U && safety_ok != 0U) ? 1U : 0U;
+        (offline == 0U && motor->measure.Error_Code == DM_NO_ERROR && base->feedback_valid != 0U && base->setting.enableflag != 0U &&
+         safety_ok != 0U)
+            ? 1U
+            : 0U;
 
     if (output_allowed == 0U)
     {

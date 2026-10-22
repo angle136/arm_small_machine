@@ -38,18 +38,23 @@ static void arm_gravity_calculate(Arm_Gravity_Result_t *result)
     result->q4 = feedback->joint[3].model_angle_rad;
     result->q5 = feedback->joint[4].model_angle_rad;
 
+    const float q23     = result->q2 + result->q3;
+    const float sin_q23 = sinf(q23);
+    const float cos_q23 = cosf(q23);
+    const float sin_q5  = sinf(result->q5);
+    const float cos_q5  = cosf(result->q5);
+    const float cos_q4  = cosf(result->q4);
+    /* J4 旋转腕部俯仰平面；q4=0 时两项都退化为旧模型的 sin(q2+q3+q5)。 */
+    const float wrist_to_j23 = sin_q23 * cos_q5 + cos_q23 * cos_q4 * sin_q5;
+    const float wrist_to_j5  = cos_q23 * sin_q5 + sin_q23 * cos_q4 * cos_q5;
+
     result->tau2_nm = ARM_J2_BASE_MASS * ARM_J2_BASE_ARM_M * sinf(result->q2) +
-                      ARM_J2_LINK_MASS * (ARM_J2_LINK_BASE_ARM_M * sinf(result->q2) -
-                                          ARM_J2_LINK_J3_ARM_M * sinf(result->q2 + result->q3)) +
-                      ARM_J2_DISTAL_MASS * (ARM_J2_DISTAL_BASE_ARM_M * sinf(result->q2) -
-                                            ARM_J2_DISTAL_J3_ARM_M * sinf(result->q2 + result->q3) -
-                                            ARM_J2_DISTAL_WRIST_ARM_M * sinf(result->q2 + result->q3 + result->q5));
-    result->tau3_nm = ARM_J3_DISTAL_MASS *
-                          (ARM_J3_LINK_ARM_M * sinf(result->q2 + result->q3) +
-                           ARM_J3_WRIST_ARM_M * sinf(result->q2 + result->q3 + result->q5)) +
-                      ARM_J3_GRAVITY_COM * sinf(result->q2 + result->q3);
-    result->tau4_nm = ARM_J4_GRAVITY_COUPLE_SCALE * ARM_J5_GRAVITY_COM * sinf(result->q2 + result->q3) * sinf(result->q5) * sinf(result->q4);
-    result->tau5_nm = ARM_J5_GRAVITY_COM * sinf(result->q5 + result->q2 + result->q3) * cosf(result->q4 * sinf(result->q2 + result->q3));
+                      ARM_J2_LINK_MASS * (ARM_J2_LINK_BASE_ARM_M * sinf(result->q2) - ARM_J2_LINK_J3_ARM_M * sin_q23) +
+                      ARM_J2_DISTAL_MASS *
+                          (ARM_J2_DISTAL_BASE_ARM_M * sinf(result->q2) - ARM_J2_DISTAL_J3_ARM_M * sin_q23 - ARM_J2_DISTAL_WRIST_ARM_M * wrist_to_j23);
+    result->tau3_nm = ARM_J3_DISTAL_MASS * (ARM_J3_LINK_ARM_M * sin_q23 + ARM_J3_WRIST_ARM_M * wrist_to_j23) + ARM_J3_GRAVITY_COM * sin_q23;
+    result->tau4_nm = ARM_J4_GRAVITY_COUPLE_SCALE * ARM_J5_GRAVITY_COM * sin_q23 * sin_q5 * sinf(result->q4);
+    result->tau5_nm = ARM_J5_GRAVITY_COM * wrist_to_j5;
 }
 
 /**

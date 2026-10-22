@@ -8,7 +8,7 @@ set "SCRIPT_DIR=%~dp0"
 set "WORKSPACE_ROOT=%SCRIPT_DIR%.."
 
 :: J-Link installation path
-set "JLINK_DIR=D:\jlink\JLink"
+set "JLINK_DIR=E:\stm32\IDE\STM32CubeIDE_1.19.0\STM32CubeIDE\plugins\com.st.stm32cube.ide.mcu.externaltools.jlink.win32_2.5.0.202506031126\tools\bin"
 
 :: Validate parameters
 if "%BOARD%"=="" exit /b 1
@@ -23,6 +23,16 @@ if /I "%BOARD%"=="damiao_h7" (
 if /I "%BOARD%"=="dji_c" (
     set "TARGET=stm32f4x"
     set "JLINK_DEV=STM32F407IG"
+    goto :board_ok
+)
+if /I "%BOARD%"=="f103_c8" (
+    set "TARGET=stm32f1x"
+    set "JLINK_DEV=STM32F103C8"
+    goto :board_ok
+)
+if /I "%BOARD%"=="105_rc" (
+    set "TARGET=stm32f1x"
+    set "JLINK_DEV=STM32F105RC"
     goto :board_ok
 )
 exit /b 1

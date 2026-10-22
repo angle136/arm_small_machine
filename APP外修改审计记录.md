@@ -220,3 +220,18 @@
 | 文件 | 修改内容 | 目的 | 风险与验证 |
 | --- | --- | --- | --- |
 | `modules/LORA/module_lora.c` | 删除 TX 尝试/成功/失败计数、每秒 UART/DMA 诊断日志及详细启动诊断；保留 DMA 可访问发送缓冲区、帧协议、发送失败返回值和 USART6 配置。 | 无线收发链路验证完成后移除临时排障负担，为后续方向修正保留干净运行路径。 | 不改变 37 字节帧、CRC8、序号、50 ms 周期或载荷顺序；按项目规则未构建。 |
+
+## 2026-10-15：发送端由 LoRa 替换为 NRF24L01
+
+| 文件 | 修改内容 | 目的 | 风险与验证 |
+| --- | --- | --- | --- |
+| `apps/arm/single_board/arm_lora.c` / `arm_lora.h`、`robot_control.c` / `.h` | 删除 LoRa 应用注册与更新路径，新增 `arm_nrf24l01.c` / `.h`，注册 8 个 `float` 关节/工具字段并在控制周期刷新。 | 将机械臂发送端应用切换到 NRF24L01 注册式模块，保持 8×float=32 字节的载荷规模。 | 注册顺序与接收端必须一致；静态检查通过。 |
+| `apps/arm/robot.cmake`、`modules/CMakeLists.txt`、`modules/module_config.cmake`、`modules/module_init.c` | 启用 `NRF24L01`，设置 TX-only、10 ms 周期和统一 5 字节地址，补齐模块源文件、配置宏和初始化入口。 | 按现有 ThreadX 模块框架接入 NRF24L01，避免继续走独立 LoRa 路径。 | `NRF24L01_TX_ENABLE=1`、`NRF24L01_RX_ENABLE=0` 已形成配置闭环；未执行完整构建。 |
+| `modules/NRF24L01/module_nrf24l01.c` / `.h`、`README.md` | 采用模块默认 CE/CSN/IRQ：dji_c 为 PF0/PB12/PF1；SPI2 PB13/PB14/PB15 与 DMA 仍由板级配置提供；README 同步说明 TX-only 可不接 IRQ、RX 必须接。 | 明确模块层与板级层职责，优先沿用现有 dji_c 默认定义，不强行改用 PB7/PC7/PA7/PC1。 | 已完成 `git diff --check` 前的静态内容核对；单文件编译检查曾通过，按本轮要求不再构建。 |
+| `board/dji_c/Inc/spi.h`、`Src/spi.c`、`Src/dma.c`、`Src/stm32f4xx_it.c`、`base.ioc` | 保留/同步 SPI2 DMA RX/TX（Stream3/4，Channel 0）及对应中断和句柄链接。 | 为 NRF24L01 模块提供 HAL/BSP DMA SPI2 底层。 | 仅做静态配置检查；未执行完整构建。 |
+
+## 2026-10-15：增加 NRF24L01 通信与发送诊断日志
+
+| 文件 | 修改内容 | 目的 | 风险与验证 |
+| --- | --- | --- | --- |
+| `modules/NRF24L01/module_nrf24l01.c` | 初始化后回读 `CONFIG`、`RF_CH`、`FEATURE` 并打印 DMA 句柄状态；首次有载荷时打印 `TX started`；首次发送结果打印 ACK/无 ACK；成功和失败累计统计按低频周期打印。 | 区分 MCU 与 NRF24L01 SPI 寄存器通信失败、发送线程未启动、以及 NRF 无法收到对端 ACK。 | 不改变无线协议、发送周期或寄存器配置；已通过 `git diff --check`，按要求未构建。 |

@@ -12,8 +12,7 @@
 #define LOG_LVL LOG_LVL_INFO
 #include "ulog_def.h"
 
-#define ARM_PI_RAD     3.14159265354f
-#define ARM_TWO_PI_RAD 6.28318530708f
+#define ARM_PI_RAD 3.14159265354f
 
 typedef struct
 {
@@ -57,22 +56,31 @@ static uint8_t arm_motor_feedback_online(const Motor_Base *base)
 }
 
 /**
- * @brief 将角度限制到 [-pi, pi]。
- * @param angle_rad 输入，待归一化角度，单位 rad。
- * @return float 归一化后的角度，单位 rad。
- * @note 调用关系：由关节角换算调用；纯计算，无安全副作用。
+ * @brief 判断达妙反馈是否可作为机械臂在线反馈。
+ * @param motor 输入，达妙电机对象指针。
+ * @return uint8_t 通信在线、反馈有效且无达妙错误码返回 1，否则返回 0。
  */
-static float arm_motor_wrap_to_pi(float angle_rad)
+static uint8_t arm_dm_feedback_online(const DM_Motor_t *motor)
 {
-    while (angle_rad > ARM_PI_RAD) angle_rad -= ARM_TWO_PI_RAD;
-    while (angle_rad < -ARM_PI_RAD) angle_rad += ARM_TWO_PI_RAD;
-    return angle_rad;
+    if (motor == NULL || motor->measure.Error_Code != DM_NO_ERROR) return 0U;
+    return arm_motor_feedback_online(&motor->base);
+}
+
+/**
+ * @brief 判断达妙反馈是否可用于重力模型。
+ * @param motor 输入，达妙电机对象指针。
+ * @return uint8_t 收到有效反馈且无达妙错误码返回 1，否则返回 0。
+ */
+static uint8_t arm_dm_feedback_valid(const DM_Motor_t *motor)
+{
+    if (motor == NULL || motor->base.feedback_valid == 0U || motor->measure.Error_Code != DM_NO_ERROR) return 0U;
+    return 1U;
 }
 
 /**
  * @brief 将驱动层角度换算为机械关节角。
  * @param joint_index 输入，0~6 对应 J1~J7。
- * @param raw_rad 输入，驱动层角度，单位 rad。
+ * @param raw_rad 输入，驱动层角度，单位 rad；J4 传累计角，其余关节传单圈/协议角。
  * @return float 软件零点和方向修正后的角度，单位 rad。
  * @note 调用关系：由反馈刷新和日志函数调用；纯计算，不下发控制命令。
  */
@@ -87,7 +95,7 @@ static float arm_motor_joint_angle(uint8_t joint_index, float raw_rad)
     case 2U:
         return ARM_J3_JOINT_DIR * (raw_rad - ARM_J3_ZERO_RAW_RAD);
     case 3U:
-        return ARM_J4_JOINT_DIR * arm_motor_wrap_to_pi(raw_rad - ARM_J4_ZERO_RAW_RAD);
+        return ARM_J4_JOINT_DIR * (raw_rad - ARM_J4_ZERO_RAW_RAD);
     case 4U:
         return ARM_J5_JOINT_DIR * (raw_rad - ARM_J5_ZERO_RAW_RAD);
     case 5U:
@@ -282,8 +290,9 @@ void arm_motor_feedback_update(void)
         float                          joint_angle_rad  = arm_motor_joint_angle(joint_index, motor->base.measure.single_round_angle);
         float                          joint_speed_rad_s = arm_motor_joint_speed(joint_index, motor->base.measure.speed_rad);
 
-        feedback->valid             = motor->base.feedback_valid;
-        feedback->online            = arm_motor_feedback_online(&motor->base);
+        /* 达妙故障帧可能仍带有位置数据，但不能作为重力模型的可用反馈。 */
+        feedback->valid             = arm_dm_feedback_valid(motor);
+        feedback->online            = arm_dm_feedback_online(motor);
         feedback->enabled           = motor->base.setting.enableflag;
         feedback->feedback_id       = motor->measure.id;
         feedback->tx_id             = (can_dev != NULL) ? can_dev->tx_id : 0U;
@@ -307,7 +316,7 @@ void arm_motor_feedback_update(void)
     {
         volatile Arm_Motor_Feedback_t *feedback          = &g_arm_feedback_snapshot.joint[3];
         Can_Device                    *can_dev           = (Can_Device *)g_j4_motor->base.transport_dev;
-        float                          joint_angle_rad   = arm_motor_joint_angle(3U, g_j4_motor->base.measure.single_round_angle);
+        float                          joint_angle_rad   = arm_motor_joint_angle(3U, g_j4_motor->base.measure.total_angle);
         float                          joint_speed_rad_s = arm_motor_joint_speed(3U, g_j4_motor->base.measure.speed_rad);
 
         feedback->online            = arm_motor_feedback_online(&g_j4_motor->base);
@@ -391,21 +400,22 @@ void arm_motor_log_status(void)
         float joint_angle = arm_motor_joint_angle(g_dm_snapshot_index[i], raw_angle);
         float joint_speed = arm_motor_joint_speed(g_dm_snapshot_index[i], motor->base.measure.speed_rad);
 
-        LOG_I("%s DM on=%u v=%u en=%u hw_cmd=%u id=%u raw=%.3f q=%.3f dq=%.3f tau=%.3f T=%u/%u", g_dm_joint_names[i],
-              (unsigned)arm_motor_feedback_online(&motor->base), (unsigned)motor->base.feedback_valid,
-              (unsigned)motor->base.setting.enableflag, (unsigned)motor->hardware_start_sent, (unsigned)motor->measure.id, raw_angle, joint_angle,
+        LOG_I("%s DM on=%u v=%u en=%u hw_cmd=%u id=%u err=%u raw=%.3f q=%.3f dq=%.3f tau=%.3f T=%u/%u", g_dm_joint_names[i],
+              (unsigned)arm_dm_feedback_online(motor), (unsigned)arm_dm_feedback_valid(motor), (unsigned)motor->base.setting.enableflag,
+              (unsigned)motor->hardware_start_sent, (unsigned)motor->measure.id, (unsigned)motor->measure.Error_Code, raw_angle, joint_angle,
               joint_speed, motor->base.measure.torque_nm, (unsigned)motor->measure.T_Mos, (unsigned)motor->measure.T_Rotor);
     }
 
     if (g_j4_motor != NULL)
     {
         float raw_angle   = g_j4_motor->base.measure.single_round_angle;
-        float joint_angle = arm_motor_joint_angle(3U, raw_angle);
+        float total_angle = g_j4_motor->base.measure.total_angle;
+        float joint_angle = arm_motor_joint_angle(3U, total_angle);
         float joint_speed = arm_motor_joint_speed(3U, g_j4_motor->base.measure.speed_rad);
 
-        LOG_I("J4 GM6020 on=%u v=%u en=%u ecd=%u raw=%.3f q=%.3f dq=%.3f rpm=%.1f cur=%d T=%u",
+        LOG_I("J4 GM6020 on=%u v=%u en=%u ecd=%u raw=%.3f total=%.3f q=%.3f dq=%.3f rpm=%.1f cur=%d T=%u",
               (unsigned)arm_motor_feedback_online(&g_j4_motor->base), (unsigned)g_j4_motor->base.feedback_valid,
-              (unsigned)g_j4_motor->base.setting.enableflag, (unsigned)g_j4_motor->measure.ecd, raw_angle, joint_angle, joint_speed,
+              (unsigned)g_j4_motor->base.setting.enableflag, (unsigned)g_j4_motor->measure.ecd, raw_angle, total_angle, joint_angle, joint_speed,
               g_j4_motor->measure.speed_rpm, (int)g_j4_motor->measure.real_current, (unsigned)g_j4_motor->measure.temperature);
     }
 }

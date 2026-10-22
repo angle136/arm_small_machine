@@ -9,33 +9,9 @@
 
 #define ARM_MOTOR_COUNT                 7
 
-/*
- * LoRa 发送坐标方向系数，输入是 joint_angle_rad；当前全部保持同向。
- * 后续实机核对方向时只修改对应关节系数为 1.0f 或 -1.0f。
- */
-#define ARM_LORA_J1_DIRECTION           1.0f
-#define ARM_LORA_J2_DIRECTION           1.0f
-#define ARM_LORA_J3_DIRECTION          - 1.0f
-#define ARM_LORA_J4_DIRECTION           1.0f
-#define ARM_LORA_J5_DIRECTION           -1.0f
-#define ARM_LORA_J6_DIRECTION           1.0f
-#define ARM_LORA_J7_DIRECTION           -1.0f
-
-/* 重装机器人接收端 J1~J7 指令范围，单位 rad。 */
-#define ARM_LORA_J1_MIN_RAD             (-6.28318530718f)
-#define ARM_LORA_J1_MAX_RAD             6.28318530718f
-#define ARM_LORA_J2_MIN_RAD             (-1.9f)
-#define ARM_LORA_J2_MAX_RAD             1.8f
-#define ARM_LORA_J3_MIN_RAD             (-3.2f)
-#define ARM_LORA_J3_MAX_RAD             3.0f
-#define ARM_LORA_J4_MIN_RAD             (-6.28318530718f)
-#define ARM_LORA_J4_MAX_RAD             6.28318530718f
-#define ARM_LORA_J5_MIN_RAD             (-2.1f)
-#define ARM_LORA_J5_MAX_RAD             2.7f
-#define ARM_LORA_J6_MIN_RAD             (-6.28318530718f)
-#define ARM_LORA_J6_MAX_RAD             6.28318530718f
-#define ARM_LORA_J7_MIN_RAD             (-2.0f)
-#define ARM_LORA_J7_MAX_RAD             2.0f
+/* board_link 第 8 个 float：夹爪两状态命令，待接收端确定实际值后修改。 */
+#define ARM_GRIPPER_CLOSE_COMMAND       1.0f
+#define ARM_GRIPPER_RELEASE_COMMAND     -1.0f
 
 /*
  * 临时输出力矩硬限幅，单位 N·m。
@@ -132,19 +108,13 @@
 
 #define ARM_J7_ZERO_VALID               1U
 #define ARM_J7_ZERO_RAW_RAD             0.066f
-/*
- * J7 方向说明：
- * 老工程曾使用 -dm35077.pos；当前工程按实机观察统一末端同类转轴方向，
- * 因此 J7 改为 raw 增大时 q 增大。后续移植老工程中涉及 J7 的逻辑时，
- * 需要显式确认是否仍要套用旧符号。
- */
 #define ARM_J7_JOINT_DIR                1.0f
 
 /*
- * Raw motor-angle limits in rad, before joint-zero conversion.
- * J4/J6 use accumulated angles; the other joints use single/protocol angles.
+ * 软件限位
+ * 
  *
- * Limits below are measured with collision clearance after zero calibration.
+ * Limits 
  */
 #define ARM_J1_LIMIT_ENABLE             1U
 #define ARM_J1_ANGLE_MIN                (-5.80f)
