@@ -9,6 +9,10 @@
 
 #define ARM_MOTOR_COUNT                 7
 
+/* board_link 第 8 个 float：夹爪两状态命令，待接收端确定实际值后修改。 */
+#define ARM_GRIPPER_CLOSE_COMMAND       1.0f
+#define ARM_GRIPPER_RELEASE_COMMAND     -1.0f
+
 /*
  * 临时输出力矩硬限幅，单位 N·m。
  *

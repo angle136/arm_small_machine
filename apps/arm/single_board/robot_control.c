@@ -49,7 +49,9 @@ static void arm_publish_feedback(void)
         memcpy(&g_arm_link_payload[i * sizeof(float)], &value, sizeof(value));
     }
 
-    const float tool_value = 0.0f;
+    const int16_t gripper_raw = g_arm_remote_channels[ARM_REMOTE_GRIPPER_CHANNEL_INDEX];
+    const float   tool_value =
+        (g_arm_remote_debug.online != 0U && gripper_raw == ARM_REMOTE_GRIPPER_CLOSE_RAW) ? ARM_GRIPPER_CLOSE_COMMAND : ARM_GRIPPER_RELEASE_COMMAND;
     memcpy(&g_arm_link_payload[ARM_MOTOR_COUNT * sizeof(float)], &tool_value, sizeof(tool_value));
 
     tx_mutex_put(&g_arm_link_payload_mutex);
