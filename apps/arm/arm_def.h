@@ -19,7 +19,7 @@
  * 用于重力补偿探索阶段，防止试参时力矩过大导致机械臂快速运动或损伤结构。
  * 该值会写入 Motor_Base.info.max_torque，并由模块层在最终 Apply 前统一限幅。
  */
-#define ARM_TEMP_OUTPUT_TORQUE_LIMIT_NM 6.5f
+#define ARM_TEMP_OUTPUT_TORQUE_LIMIT_NM    7.0f
 
 /* J2/J3/J4/J5 重力补偿输出配置；所有输出继续受硬限幅和角度安全限位保护。 */
 
@@ -86,11 +86,11 @@
 #define ARM_J1_JOINT_DIR                1.0f
 
 #define ARM_J2_ZERO_VALID               1U
-#define ARM_J2_ZERO_RAW_RAD             (-0.995f)
+#define ARM_J2_ZERO_RAW_RAD             (-0.952f)
 #define ARM_J2_JOINT_DIR                (-1.0f)
 
 #define ARM_J3_ZERO_VALID               1U
-#define ARM_J3_ZERO_RAW_RAD             3.183f
+#define ARM_J3_ZERO_RAW_RAD             3.148f
 #define ARM_J3_JOINT_DIR                1.0f
 
 #define ARM_J4_ZERO_VALID               1U
