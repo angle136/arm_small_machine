@@ -1,257 +1,88 @@
-[![zread](https://img.shields.io/badge/Ask_Zread-_.svg?style=for-the-badge&color=00b0aa&labelColor=000000&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTQuOTYxNTYgMS42MDAxSDIuMjQxNTZDMS44ODgxIDEuNjAwMSAxLjYwMTU2IDEuODg2NjQgMS42MDE1NiAyLjI0MDFWNC45NjAxQzEuNjAxNTYgNS4zMTM1NiAxLjg4ODEgNS42MDAxIDIuMjQxNTYgNS42MDAxSDQuOTYxNTZDNS4zMTUwMiA1LjYwMDEgNS42MDE1NiA1LjMxMzU2IDUuNjAxNTYgNC45NjAxVjIuMjQwMUM1LjYwMTU2IDEuODg2NjQgNS4zMTUwMiAxLjYwMDEgNC45NjE1NiAxLjYwMDFaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik00Ljk2MTU2IDEwLjM5OTlIMi4yNDE1NkMxLjg4ODEgMTAuMzk5OSAxLjYwMTU2IDEwLjY4NjQgMS42MDE1NiAxMS4wMzk5VjEzLjc1OTlDMS42MDE1NiAxNC4xMTM0IDEuODg4MSAxNC4zOTk5IDIuMjQxNTYgMTQuMzk5OUg0Ljk2MTU2QzUuMzE1MDIgMTQuMzk5OSA1LjYwMTU2IDE0LjExMzQgNS42MDE1NiAxMy43NTk5VjExLjAzOTlDNS42MDE1NiAxMC42ODY0IDUuMzE1MDIgMTAuMzk5OSA0Ljk2MTU2IDEwLjM5OTlaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik0xMy43NTg0IDEuNjAwMUgxMS4wMzg0QzEwLjY4NSAxLjYwMDEgMTAuMzk4NCAxLjg4NjY0IDEwLjM5ODQgMi4yNDAxVjQuOTYwMUMxMC4zOTg0IDUuMzEzNTYgMTAuNjg1IDUuNjAwMSAxMS4wMzg0IDUuNjAwMUgxMy43NTg0QzE0LjExMTkgNS42MDAxIDE0LjM5ODQgNS4zMTM1NiAxNC4zOTg0IDQuOTYwMVYyLjI0MDFDMTQuMzk4NCAxLjg4NjY0IDE0LjExMTkgMS42MDAxIDEzLjc1ODQgMS42MDAxWiIgZmlsbD0iI2ZmZiIvPgo8cGF0aCBkPSJNNCAxMkwxMiA0TDQgMTJaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik00IDEyTDEyIDQiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgo8L3N2Zz4K&logoColor=ffffff)](https://zread.ai/HebutMas/mas_embedded_threadx)
+# 7 轴机械臂工程
 
-# mas_embedded_threadx
+本仓库同时保存机械臂嵌入式固件和 MATLAB 可视化/模型工具。克隆一次即可获得固件、
+串口解析程序、URDF 以及运行所需的全部 STL 网格，不依赖原开发电脑上的绝对路径。
 
-基于 **ThreadX RTOS** 的嵌入式机器人控制框架，面向多兵种、多板型的 RoboMaster 设计。
-
-## 开发环境配置
-
-[开发环境配置](docs/开发环境搭建.MD)
-
-## 工程结构
-
-```
-mas_embedded_threadx/
-│
-├── apps/                          # 应用层：机器人业务代码
-│   ├── config.cmake               # 全局构建配置（选择 ROBOT / BOARD）
-│   ├── app_init.c / app_init.h    # 应用层入口
-│   ├── robot_def.h.in             # robot_def.h 生成模板
-│   ├── module_config.h.in         # module_config.h 生成模板（变量 → 宏 映射）
-│   ├── templates/                 # 机器人配置模板
-│   │   ├── robot.cmake            # 各机器人差异配置的参考模板
-│   │   ├── single_board/          # 单板模板代码
-│   │   ├── gimbal_board/          # 云台板模板代码
-│   │   └── chassis_board/         # 底盘板模板代码
-│   └──...                         # 各机器人文件夹 
-│
-├── board/                         # 板级支持包（BSP）
-│   ├── bsp/                       # 通用 BSP 库（HAL 封装）
-│   │   ├── bsp_init.c             # BSP 初始化入口
-│   │   ├── CAN/                   # CAN 总线驱动 + 接收任务
-│   │   ├── UART/                  # 串口驱动
-│   │   ├── SPI/                   # SPI 驱动
-│   │   ├── I2C/                   # I2C 驱动
-│   │   ├── PWM/                   # PWM 输出
-│   │   ├── GPIO/                  # GPIO 控制
-│   │   ├── LED/                   # LED 指示灯
-│   │   ├── BEEP/                  # 蜂鸣器
-│   │   ├── FLASH/                 # Flash 读写
-│   │   ├── DWT/                   # DWT 延时
-│   │   └── USB/                   # USB CDC 用户层
-│   ├── damiao_h7/                 # H7 开发板（Cortex-M7）
-│   │   ├── CMakeLists.txt         
-│   │   ├── Core/                  
-│   │   ├── Drivers/               
-│   │   └── cmake/stm32cubemx/     
-│   └── dji_c/                     # DJI C 板（Cortex-M4）
-│       ├── CMakeLists.txt         
-│       ├── Core/                  
-│       ├── Drivers/               
-│       └── cmake/stm32cubemx/     
-│
-├── modules/                       # 模块层：功能模块
-│   ├── module_init.c / .h         # 模块初始化入口（条件编译）
-│   ├── module_config.cmake        # 模块默认配置模板
-│   ├── CMakeLists.txt             # 条件编译：按需收录源文件
-│   ├── algorithm/                 # 基础算法库           
-│   ├── OFFLINE/                   # 离线检测模块
-│   ├── REMOTE/                    # 遥控器模块
-│   ├── BMI088/                    # IMU 传感器
-│   ├── INS/                       # 惯性导航系统
-│   ├── REFEREE/                   # 裁判系统通信
-│   ├── MOTOR/                     # 电机控制
-│   ├── VISION/                    # 视觉通信模块
-│   ├── BOARDCOMM/                 # 板间通信
-│   ├── SuperCap/                  # 超级电容管理
-│   ├── WT606/                     # WT606 模块
-│   └──...                         # 未来增加模块       
-│
-├── robot/                         # 机器人初始化层
-│   └── robot_init.c / .h          
-│
-├── threadx/                       # Microsoft ThreadX RTOS
-│   ├── common/                    
-│   ├── ports/                     
-│   ├── tx_user.h                  
-│   └── CMakeLists.txt             
-│
-├── utils/                         # 通用工具库
-│   ├── ulog/                      # 日志系统（基于 SEGGER RTT）
-│   ├── kfifo/                     # 环形缓冲区
-│   └── utils_init.c / .h          # 工具层初始化
-│
-├── CMSIS-DSP/                     # ARM CMSIS-DSP 数学库
-├── CherryUSB/                     # CherryUSB 设备协议栈
-│
-├── .clang-format                  # 代码格式化配置
-├── .clang-tidy                    # 静态检查配置
-└── .vscode / .zed                 # IDE 配置与调试任务
-```
-
-## 快速开始
-
-### 获取工程
-```bash
-git clone https://github.com/HebutMas/mas_embedded_threadx.git // http
-git clone git@github.com:HebutMas/mas_embedded_threadx.git // ssh
-```
-
-
-### 选择机器人和板型
-
-编辑 `apps/config.cmake` 中的默认值：
-
-```cmake
-set(ROBOT "sentry" CACHE STRING "Target robot")  # hero / engineer / infantry3 / infantry4 / infantry5 / drone / sentry / darts / customcontrol
-set(BOARD "gimbal" CACHE STRING "Board role")    # single / gimbal / chassis
-```
-
-也可不改文件，配置时用命令行覆盖（缓存变量，适合 CI 和多配置切换）：
-
-```bash
-cmake -S board/dji_c -B build/dji_c/Debug --preset Debug -DROBOT=infantry3 -DBOARD=single
-```
-
-> 注意：已配置过的 build 目录以缓存值为准，切换时用 `-DROBOT=...` 覆盖或删除 build 目录。
-
-### 编译
-
-推荐使用 IDE 内置任务一键编译，也可手动执行：
-
-**damiao_h7（Cortex-M7）：**
-```bash
-#注意手动执行编译后，elf生成在build/damiao_h7/Debug/base.elf
-cmake -S board/damiao_h7 -B build/damiao_h7/Debug --preset Debug -G Ninja
-cmake --build build/damiao_h7/Debug --config Debug -j $(nproc)
-```
-
-**dji_c（Cortex-M4）：**
-```bash
-#注意手动执行编译后，elf生成在build/dji_c/Debug/base.elf
-cmake -S board/dji_c -B build/dji_c/Debug --preset Debug -G Ninja
-cmake --build build/dji_c/Debug --config Debug -j $(nproc)
-```
-
-> IDE 内置任务一键编译完成后会自动将 `compile_commands.json` 复制到 `build/`，并将 `.elf` 复制到 `build/<board>.elf`，供 `clangd` 和调试器使用。
-
-### ccache 加速编译
-
-如果系统已安装 `ccache`，CMake 会自动使用它缓存 C/C++ 编译结果；不需要额外配置。检查是否生效：
-
-```bash
-ccache --show-stats
-```
-
-### Cppcheck 静态检查
-
-`建议在提交前手动检查一下，查看是否有空指针等问题`
-
-Cppcheck 在 CI 的 push 和合并到 `dev` 分支时自动执行，只检查以下目录：
+## 目录结构
 
 ```text
-board/bsp/  modules/  apps/  utils/
-```
-手动检查一个已经编译过的构建目录：
-```bash
-# 以c板为例，喵板只需要把dji_c换成damiao_h7即可
-cmake --build build/dji_c/Debug --target cppcheck-log
-cat build/dji_c/Debug/cppcheck/cppcheck.log
-```
-如果还没有编译目录，先执行编译：
-日志为空表示检查通过；Cppcheck 返回非零状态表示检查失败。
-
-### 烧录
-
-项目提供一键烧录脚本，支持交互式选择：
-
-- **VS Code**：运行任务 `Flash board`，在弹出的选项中选择开发板（`damiao_h7` / `dji_c`）和调试器（`stlink` / `daplink` / `jlink`）
-- **Zed**：运行任务 `Flash board`
-
-也可直接调用脚本：
-```bash
-# 交互式选择
-.vscode/flash_interactive.sh <board> <probe>
-.zed/flash_select.sh
+.
+├─ arm_small_machine/       ThreadX 嵌入式固件
+└─ matlab_arm_visualizer/   MATLAB 串口可视化、URDF 和 meshes
 ```
 
-### 调试
+- [固件说明](arm_small_machine/README.md)
+- [MATLAB 工具说明](matlab_arm_visualizer/README.md)
 
-| 调试器 | 工具 | 配置位置 |
-|--------|------|----------|
-| ST-Link / DAP-Link | **Cortex-Debug** (OpenOCD) | `.vscode/launch.json` |
-| J-Link | **Ozone** | 外部启动 |
+MATLAB 模型资源来自独立仓库提交 `8bc9839 Bundle portable arm model assets`。运行仓库
+不包含约 138 MB 的 STEP 源档；程序不依赖该文件，需要归档时应使用 Git LFS 或 Release
+附件。
 
-## 如何贡献与维护代码
+## 固件构建
 
-### 代码风格
-
-本项目使用 **`.clang-format`** 统一代码风格，提交前请务必格式化：
+依赖 CMake、Ninja 和 ARM GNU Toolchain。以下命令从总仓库根目录执行：
 
 ```bash
-# 格式化所有修改过的文件
-clang-format -i $(git diff --name-only HEAD '*.c' '*.h')
-
-# 或格式化整个项目
-find . -name '*.c' -o -name '*.h' | xargs clang-format -i
+cmake -S arm_small_machine/board/dji_c \
+  -B arm_small_machine/build/dji_c/Debug \
+  --preset Debug -DROBOT=arm -DBOARD=single
+cmake --build arm_small_machine/build/dji_c/Debug -j
 ```
 
-### 添加新模块
+输出文件为 `arm_small_machine/build/dji_c/Debug/base.elf`。烧录和 Ozone 调试前必须先支撑
+机械臂；下载、复位或调试器停核期间，单片机无法持续发送重力补偿力矩。
 
-若需为项目添加新的功能模块（如传感器、执行器），请遵循 **6 步模块化流程**：
+## MATLAB 快速验证
 
-1. 在 `modules/<NAME>/` 下创建模块代码（`module_<name>.h` + `module_<name>.c`）
-2. 在 `modules/CMakeLists.txt` 中添加 `if(MODULE_XXX)` 条件编译块
-3. 在 `modules/module_init.c` 中添加条件初始化代码
-4. 在 `modules/module_config.cmake` 中注册默认参数和模块列表
-5. 在 `apps/module_config.h.in` 模板中添加该模块的参数宏导出（普通宏用 `#define VAR @VAR@`，可选硬件句柄用 `#cmakedefine VAR @VAR@`）
-6. 在目标机器人的 `apps/<robot>/robot.cmake` 中使能或覆盖配置
+安装 MATLAB、Robotics System Toolbox 和 Instrument Control Toolbox，然后在 MATLAB 中
+进入 `matlab_arm_visualizer`：
 
-**详细规范与示例请参考 [`modules/MODULES.MD`](modules/MODULES.MD)。**
-
-### 添加新机器人
-
-1. 在 `apps/` 下新建目录 `apps/<robot_name>/`
-2. 复制 `apps/templates/robot.cmake` 到 `apps/<robot_name>/robot.cmake` 并修改模块列表和参数
-3. 在 `apps/<robot_name>/` 下按板型创建业务代码目录：
-   - `single_board/` —— 单板整机
-   - `gimbal_board/` —— 云台板
-   - `chassis_board/` —— 底盘板
-4. 在 `apps/config.cmake` 中将新机器人加入注释说明
-
-### Git 工作流建议
-
-1. **分支管理**：
-   - `main`：稳定分支，仅接受经过测试的合并
-   - `dev`：日常开发分支
-   - `feature/<模块名>` 或 `fix/<问题描述>`：个人开发分支
-
-2. **提交规范**：
-   - 提交信息使用中文或英文，清晰描述改动内容
-   - 一次提交只做一件事，避免混杂无关改动
-   - 涉及模块改动的提交，建议在信息中标注模块名，例如：`[MOTOR] 修复达妙电机 CAN ID 过滤逻辑`
-
-3. **代码审查 checklist**：
-   - [ ] 是否通过 `.clang-format` 格式化
-   - [ ] 新模块是否按 `MODULES.MD` 规范添加
-   - [ ] 是否修改了 `apps/config.cmake` 中的默认 ROBOT/BOARD（不应提交个人调试配置）
-   - [ ] 是否在目标板卡上编译通过
-   - [ ] 是否在实际硬件上测试通过
-
-## 注意事项
-
-- 不同系统下的git换行符问题
-```bash
-// 在git bash中运行
-linux： git config --global core.autocrlf input
-windows：git config --global core.autocrlf true
+```matlab
+test_portable_package
+test_board_link_parser
+show_placeholder_arm
 ```
 
+连接串口时：
 
-## 相关文档
+```matlab
+session = arm_serial_visualizer("COM15");
+```
 
-- [`modules/MODULES.MD`](modules/MODULES.MD) —— 模块框架详细文档（添加模块的完整指南）
-- [ThreadX 官方文档](https://github.com/eclipse-threadx/threadx) —— RTOS API 参考
-- [CMSIS-DSP 文档](https://arm-software.github.io/CMSIS-DSP/latest/) —— DSP 函数说明
-- [CherryUSB 文档](https://github.com/sakumisu/CherryUSB) —— USB 协议栈说明
+程序会根据自身位置寻找 `model/robot_dynamics.urdf` 和 `model/meshes`，仓库移动到其他
+盘符或电脑后无需修改路径。
 
+## 板间串口协议
+
+当前固件通过 USART6（115200 baud，约 10 ms 一帧）发送固定 36 字节二进制帧：
+
+```text
+0xAA | LEN=32 | SEQ | J1..J7, TOOL（8 个 little-endian float32）| 0xFF
+```
+
+J1~J7 均为单位 `rad` 的绝对关节角，不是增量。发送坐标为：
+
+```text
+J1 = r1 + 1.836
+J2 = r2 + 0.952
+J3 = r3 - 3.148
+J4 = total_angle4 - 1.01242732
+J5 = 0.040 - r5
+J6 = r6 - 1.04290104
+J7 = r7 - 0.066
+```
+
+其中 J1/J2/J3/J5/J6/J7 使用 DM 单圈绝对角反馈，J4 使用 GM6020 软件累计多圈角。
+MATLAB 端直接用最新一帧覆盖显示值，不得再次执行 `deg2rad` 或做增量累加。
+
+第 8 个 float 是夹爪两状态命令：遥控器通道数组下标 4 为 `240` 时发送 `+1.0f`，
+为 `1807` 时发送 `-1.0f`；遥控器离线或值无效时也发送释放值 `-1.0f`。这两个发送值
+集中定义在固件 `apps/arm/arm_def.h`，接收端最终数值确定后可直接修改宏。
+
+## 两部分的职责
+
+- 固件负责电机反馈解码、零点和方向换算、重力补偿、安全门以及串口发送。
+- MATLAB 负责协议解析、原始关节值显示及固件坐标到 URDF/CAD 坐标的可视化映射。
+- MATLAB 中的 URDF 惯性参数可用于离线分析，但不会自动改写固件中的重力补偿参数。
+- 修改角度协议、零点或方向时，应同时验证固件发送向量和 MATLAB 映射，避免把模型修正
+  混入对外通信协议。
