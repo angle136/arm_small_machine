@@ -1,0 +1,7 @@
+# MATLAB source and documentation remain reviewable text files.
+*.m text
+*.md text
+*.urdf text eol=lf
+
+# STL meshes are binary assets; Git must not attempt line-ending conversion.
+*.stl binary

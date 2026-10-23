@@ -1,0 +1,12 @@
+# MATLAB temporary and generated files
+*.asv
+*.autosave
+*.slxc
+*.mex*
+*.mat
+*.mlappinstall
+
+# Runtime/editor artifacts
+.matlab_visual_*.urdf
+~$*
+.DS_Store

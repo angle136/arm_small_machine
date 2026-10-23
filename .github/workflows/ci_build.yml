@@ -11,6 +11,9 @@ on:
 jobs:
   build:
     if: github.event_name == 'push'
+    defaults:
+      run:
+        working-directory: arm_small_machine
     strategy:
       fail-fast: false
       matrix:
@@ -51,7 +54,7 @@ jobs:
                 -DROBOT="$robot" \
                 -DBOARD="$board_type" \
                 -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-                -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/board/${{ matrix.board }}/cmake/gcc-arm-none-eabi.cmake"
+                -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/arm_small_machine/board/${{ matrix.board }}/cmake/gcc-arm-none-eabi.cmake"
               cmake --build "$build_dir" -j "$(nproc)"
               arm-none-eabi-size "$build_dir/base.elf"
             done
@@ -62,11 +65,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-${{ matrix.board }}
-          path: build/${{ matrix.board }}
+          path: arm_small_machine/build/${{ matrix.board }}
           if-no-files-found: ignore
 
   merge:
     if: github.event_name == 'pull_request' && github.base_ref == 'dev'
+    defaults:
+      run:
+        working-directory: arm_small_machine
     runs-on: ubuntu-latest
 
     steps:
@@ -111,7 +117,7 @@ jobs:
                   -DBOARD="$board_type" \
                   -DMAS_REQUIRE_CPPCHECK=ON \
                   -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-                  -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/board/$board/cmake/gcc-arm-none-eabi.cmake" \
+                  -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/arm_small_machine/board/$board/cmake/gcc-arm-none-eabi.cmake" \
                   >"$log_dir/configure.log" 2>&1; then
                   build_failures+=("$label (configure)")
                   echo "::error title=Configure failed::$label"
@@ -177,6 +183,6 @@ jobs:
         with:
           name: merge-check-logs
           path: |
-            build/**/cppcheck/cppcheck.log
-            build/**/logs
+            arm_small_machine/build/**/cppcheck/cppcheck.log
+            arm_small_machine/build/**/logs
           if-no-files-found: ignore
