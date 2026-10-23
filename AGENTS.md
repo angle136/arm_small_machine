@@ -61,8 +61,8 @@ Let `r1`, `r2`, `r3`, `r5`, `r6`, and `r7` be the corresponding DM `single_round
 
 ```text
 J1_send = r1 + 1.836
-J2_send = r2 + 0.995
-J3_send = r3 - 3.183
+J2_send = r2 + 0.952
+J3_send = r3 - 3.148
 J4_send = t4 - 1.01242732
 J5_send = 0.040 - r5
 J6_send = r6 - 1.04290104
@@ -72,7 +72,7 @@ J7_send = r7 - 0.066
 J2 contains two deliberate sign changes:
 
 ```text
-q2      = -(r2 + 0.995)
+q2      = -(r2 + 0.952)
 J2_send = -q2
 ```
 
@@ -113,8 +113,8 @@ the transmitted result must be:
 
 ```text
 J1= 0.83600000
-J2= 0.99500000
-J3= 0.81700000
+J2= 0.95200000
+J3= 0.85200000
 J4= 0.98757268
 J5=-0.96000000
 J6= 0.95709896
@@ -125,8 +125,8 @@ For raw feedback `U=32768` on every DM motor, and J4 `ECD=1320`, `total_round=0`
 
 ```text
 J1= 1.83619074
-J2= 0.99519074
-J3=-3.18280926
+J2= 0.95219074
+J3=-3.14780926
 J4= 0.00001268
 J5= 0.03980926
 J6=-1.04271030
