@@ -19,7 +19,90 @@ typedef struct
     float tau5_nm;
 } Arm_Gravity_Result_t;
 
+typedef struct
+{
+    uint8_t enable;
+    float   coefficient;
+    float   deadband_rad_s;
+    float   torque_limit_nm;
+} Arm_Damping_Config_t;
+
+static const Arm_Damping_Config_t g_arm_damping_config[ARM_MOTOR_COUNT] = {
+    {ARM_J1_DAMPING_ENABLE, ARM_J1_DAMPING_COEFF, ARM_J1_DAMPING_DEADBAND_RAD_S, ARM_J1_DAMPING_LIMIT_NM},
+    {ARM_J2_DAMPING_ENABLE, ARM_J2_DAMPING_COEFF, ARM_J2_DAMPING_DEADBAND_RAD_S, ARM_J2_DAMPING_LIMIT_NM},
+    {ARM_J3_DAMPING_ENABLE, ARM_J3_DAMPING_COEFF, ARM_J3_DAMPING_DEADBAND_RAD_S, ARM_J3_DAMPING_LIMIT_NM},
+    {ARM_J4_DAMPING_ENABLE, ARM_J4_DAMPING_COEFF, ARM_J4_DAMPING_DEADBAND_RAD_S, ARM_J4_DAMPING_LIMIT_NM},
+    {ARM_J5_DAMPING_ENABLE, ARM_J5_DAMPING_COEFF, ARM_J5_DAMPING_DEADBAND_RAD_S, ARM_J5_DAMPING_LIMIT_NM},
+    {ARM_J6_DAMPING_ENABLE, ARM_J6_DAMPING_COEFF, ARM_J6_DAMPING_DEADBAND_RAD_S, ARM_J6_DAMPING_LIMIT_NM},
+    {ARM_J7_DAMPING_ENABLE, ARM_J7_DAMPING_COEFF, ARM_J7_DAMPING_DEADBAND_RAD_S, ARM_J7_DAMPING_LIMIT_NM},
+};
+
+static float   g_arm_damping_speed_rad_s[ARM_MOTOR_COUNT];
+static uint8_t g_arm_damping_filter_initialized;
+
 volatile Arm_Gravity_Debug_t g_arm_gravity_debug;
+
+static float arm_damping_apply_deadband(float speed_rad_s, float deadband_rad_s)
+{
+    if (speed_rad_s > deadband_rad_s) return speed_rad_s - deadband_rad_s;
+    if (speed_rad_s < -deadband_rad_s) return speed_rad_s + deadband_rad_s;
+    return 0.0f;
+}
+
+static float arm_damping_limit_torque(float torque_nm, float limit_nm)
+{
+    if (torque_nm > limit_nm) return limit_nm;
+    if (torque_nm < -limit_nm) return -limit_nm;
+    return torque_nm;
+}
+
+static void arm_damping_reset(void)
+{
+    memset(g_arm_damping_speed_rad_s, 0, sizeof(g_arm_damping_speed_rad_s));
+    memset((void *)g_arm_gravity_debug.damping_speed_rad_s, 0, sizeof(g_arm_gravity_debug.damping_speed_rad_s));
+    memset((void *)g_arm_gravity_debug.damping_torque_nm, 0, sizeof(g_arm_gravity_debug.damping_torque_nm));
+    g_arm_damping_filter_initialized = 0U;
+}
+
+/**
+ * @brief 计算 J1~J7 驱动坐标系粘滞阻尼力矩。
+ * @param torque_nm 输出，长度为 ARM_MOTOR_COUNT 的阻尼力矩数组。
+ * @note 使用驱动层速度可直接保证阻尼力矩与电机转动方向相反，不依赖重力模型符号约定。
+ */
+static void arm_damping_calculate(float torque_nm[ARM_MOTOR_COUNT])
+{
+    if (torque_nm == NULL) return;
+
+    const volatile Arm_Feedback_Snapshot_t *feedback = arm_motor_feedback_get();
+
+    if (g_arm_damping_filter_initialized == 0U)
+    {
+        for (size_t i = 0U; i < ARM_MOTOR_COUNT; ++i) g_arm_damping_speed_rad_s[i] = feedback->joint[i].speed_rad_s;
+        g_arm_damping_filter_initialized = 1U;
+    }
+
+    for (size_t i = 0U; i < ARM_MOTOR_COUNT; ++i)
+    {
+        const Arm_Damping_Config_t *config          = &g_arm_damping_config[i];
+        float                       raw_speed_rad_s = feedback->joint[i].speed_rad_s;
+
+        g_arm_damping_speed_rad_s[i] += ARM_DAMPING_FILTER_ALPHA * (raw_speed_rad_s - g_arm_damping_speed_rad_s[i]);
+        g_arm_gravity_debug.damping_speed_rad_s[i] = g_arm_damping_speed_rad_s[i];
+
+        if (ARM_DAMPING_ENABLE == 0U || config->enable == 0U)
+        {
+            torque_nm[i]                             = 0.0f;
+            g_arm_gravity_debug.damping_torque_nm[i] = 0.0f;
+            continue;
+        }
+
+        float effective_speed_rad_s = arm_damping_apply_deadband(g_arm_damping_speed_rad_s[i], config->deadband_rad_s);
+        float damping_torque_nm     = -ARM_DAMPING_GLOBAL_SCALE * config->coefficient * effective_speed_rad_s;
+
+        torque_nm[i]                             = arm_damping_limit_torque(damping_torque_nm, config->torque_limit_nm);
+        g_arm_gravity_debug.damping_torque_nm[i] = torque_nm[i];
+    }
+}
 
 /**
  * @brief 使用同一反馈快照计算 J2~J5 重力补偿力矩。
@@ -74,6 +157,7 @@ static void arm_gravity_clear_debug_torque(void)
 void arm_gravity_init(void)
 {
     memset((void *)&g_arm_gravity_debug, 0, sizeof(g_arm_gravity_debug));
+    arm_damping_reset();
     arm_motor_stop_all();
 }
 
@@ -89,6 +173,7 @@ void arm_gravity_update(void)
     {
         g_arm_gravity_debug.output_active = 0U;
         arm_gravity_clear_debug_torque();
+        arm_damping_reset();
         arm_motor_stop_all();
         return;
     }
@@ -105,14 +190,18 @@ void arm_gravity_update(void)
         0.0f,
         0.0f,
     };
+    float damping_torque_nm[ARM_MOTOR_COUNT] = {0};
+    arm_damping_calculate(damping_torque_nm);
+    for (size_t i = 0U; i < ARM_MOTOR_COUNT; ++i) torque_nm[i] += damping_torque_nm[i];
+
     const uint8_t enable[ARM_MOTOR_COUNT] = {
-        ARM_J1_ZERO_TORQUE_ENABLE,
-        ARM_J2_GRAVITY_OUTPUT_ENABLE,
-        ARM_J3_GRAVITY_OUTPUT_ENABLE,
-        ARM_J4_GRAVITY_OUTPUT_ENABLE,
-        ARM_J5_GRAVITY_OUTPUT_ENABLE,
-        ARM_J6_ZERO_TORQUE_ENABLE,
-        ARM_J7_ZERO_TORQUE_ENABLE,
+        (ARM_J1_ZERO_TORQUE_ENABLE != 0U) || (ARM_DAMPING_ENABLE != 0U && ARM_J1_DAMPING_ENABLE != 0U),
+        (ARM_J2_GRAVITY_OUTPUT_ENABLE != 0U) || (ARM_DAMPING_ENABLE != 0U && ARM_J2_DAMPING_ENABLE != 0U),
+        (ARM_J3_GRAVITY_OUTPUT_ENABLE != 0U) || (ARM_DAMPING_ENABLE != 0U && ARM_J3_DAMPING_ENABLE != 0U),
+        (ARM_J4_GRAVITY_OUTPUT_ENABLE != 0U) || (ARM_DAMPING_ENABLE != 0U && ARM_J4_DAMPING_ENABLE != 0U),
+        (ARM_J5_GRAVITY_OUTPUT_ENABLE != 0U) || (ARM_DAMPING_ENABLE != 0U && ARM_J5_DAMPING_ENABLE != 0U),
+        (ARM_J6_ZERO_TORQUE_ENABLE != 0U) || (ARM_DAMPING_ENABLE != 0U && ARM_J6_DAMPING_ENABLE != 0U),
+        (ARM_J7_ZERO_TORQUE_ENABLE != 0U) || (ARM_DAMPING_ENABLE != 0U && ARM_J7_DAMPING_ENABLE != 0U),
     };
 
     g_arm_gravity_debug.tau2_cmd_nm = torque_nm[1];

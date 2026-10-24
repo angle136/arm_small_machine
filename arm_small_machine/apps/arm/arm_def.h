@@ -54,10 +54,56 @@
 #define ARM_J3_GRAVITY_TEST_SCALE       1.0f
 #define ARM_J3_GRAVITY_OUTPUT_SIGN      1.0f
 
-/* J1/J6/J7 仅发送零力矩使能帧，用于解除失能状态下的电磁阻尼，不参与重力补偿。 */
+/* J1/J6/J7 不参与重力补偿；基础使能用于解除失能状态下的电磁阻尼。 */
 #define ARM_J1_ZERO_TORQUE_ENABLE       1U
 #define ARM_J6_ZERO_TORQUE_ENABLE       1U
 #define ARM_J7_ZERO_TORQUE_ENABLE       1U
+
+/*
+ * 手动拖动模式的粘滞阻尼。
+ *
+ * 阻尼力矩始终与电机转速方向相反，不引入位置回中力矩。每轴可独立配置阻尼系数、
+ * 速度死区和阻尼分量限幅；ARM_DAMPING_GLOBAL_SCALE 用于上机时整体缓慢放大。
+ * 阻尼系数单位为 N*m/(rad/s)，速度死区单位为 rad/s，力矩限幅单位为 N*m。
+ */
+#define ARM_DAMPING_ENABLE              1U
+#define ARM_DAMPING_GLOBAL_SCALE        0.10f
+#define ARM_DAMPING_FILTER_ALPHA        0.08f
+
+#define ARM_J1_DAMPING_ENABLE           1U
+#define ARM_J1_DAMPING_COEFF            0.20f
+#define ARM_J1_DAMPING_DEADBAND_RAD_S   0.03f
+#define ARM_J1_DAMPING_LIMIT_NM         0.40f
+
+#define ARM_J2_DAMPING_ENABLE           1U
+#define ARM_J2_DAMPING_COEFF            0.60f
+#define ARM_J2_DAMPING_DEADBAND_RAD_S   0.03f
+#define ARM_J2_DAMPING_LIMIT_NM         0.80f
+
+#define ARM_J3_DAMPING_ENABLE           1U
+#define ARM_J3_DAMPING_COEFF            0.35f
+#define ARM_J3_DAMPING_DEADBAND_RAD_S   0.03f
+#define ARM_J3_DAMPING_LIMIT_NM         0.60f
+
+#define ARM_J4_DAMPING_ENABLE           1U
+#define ARM_J4_DAMPING_COEFF            0.10f
+#define ARM_J4_DAMPING_DEADBAND_RAD_S   0.10f
+#define ARM_J4_DAMPING_LIMIT_NM         0.30f
+
+#define ARM_J5_DAMPING_ENABLE           1U
+#define ARM_J5_DAMPING_COEFF            0.08f
+#define ARM_J5_DAMPING_DEADBAND_RAD_S   0.03f
+#define ARM_J5_DAMPING_LIMIT_NM         0.25f
+
+#define ARM_J6_DAMPING_ENABLE           1U
+#define ARM_J6_DAMPING_COEFF            0.04f
+#define ARM_J6_DAMPING_DEADBAND_RAD_S   0.04f
+#define ARM_J6_DAMPING_LIMIT_NM         0.15f
+
+#define ARM_J7_DAMPING_ENABLE           1U
+#define ARM_J7_DAMPING_COEFF            0.04f
+#define ARM_J7_DAMPING_DEADBAND_RAD_S   0.04f
+#define ARM_J7_DAMPING_LIMIT_NM         0.15f
 
 /* 达妙命令 ID / 反馈 ID，沿用旧机械臂的 CAN 分配。 */
 #define ARM_J1_DM_TX_ID                 0x01U
@@ -112,9 +158,9 @@
 
 /*
  * 软件限位
- * 
  *
- * Limits 
+ *
+ * Limits
  */
 #define ARM_J1_LIMIT_ENABLE             1U
 #define ARM_J1_ANGLE_MIN                (-5.80f)
