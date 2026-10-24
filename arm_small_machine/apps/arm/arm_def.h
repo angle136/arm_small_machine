@@ -67,38 +67,38 @@
  * 阻尼系数单位为 N*m/(rad/s)，速度死区单位为 rad/s，力矩限幅单位为 N*m。
  */
 #define ARM_DAMPING_ENABLE              1U
-#define ARM_DAMPING_GLOBAL_SCALE        0.10f
-#define ARM_DAMPING_FILTER_ALPHA        0.08f
+#define ARM_DAMPING_GLOBAL_SCALE     1.0f//整体阻尼参入值
+#define ARM_DAMPING_FILTER_ALPHA        0.08f//滤波大小
 
 #define ARM_J1_DAMPING_ENABLE           1U
-#define ARM_J1_DAMPING_COEFF            0.20f
-#define ARM_J1_DAMPING_DEADBAND_RAD_S   0.03f
-#define ARM_J1_DAMPING_LIMIT_NM         0.40f
+#define ARM_J1_DAMPING_COEFF            0.80f  //阻尼强度系数
+#define ARM_J1_DAMPING_DEADBAND_RAD_S   0.03f //阻尼死区，微动不阻尼
+#define ARM_J1_DAMPING_LIMIT_NM         0.40f   //最大阻尼力矩
 
 #define ARM_J2_DAMPING_ENABLE           1U
-#define ARM_J2_DAMPING_COEFF            0.60f
+#define ARM_J2_DAMPING_COEFF            0.80f
 #define ARM_J2_DAMPING_DEADBAND_RAD_S   0.03f
 #define ARM_J2_DAMPING_LIMIT_NM         0.80f
 
 #define ARM_J3_DAMPING_ENABLE           1U
 #define ARM_J3_DAMPING_COEFF            0.35f
 #define ARM_J3_DAMPING_DEADBAND_RAD_S   0.03f
-#define ARM_J3_DAMPING_LIMIT_NM         0.60f
+#define ARM_J3_DAMPING_LIMIT_NM         0.50f
 
 #define ARM_J4_DAMPING_ENABLE           1U
 #define ARM_J4_DAMPING_COEFF            0.10f
 #define ARM_J4_DAMPING_DEADBAND_RAD_S   0.10f
-#define ARM_J4_DAMPING_LIMIT_NM         0.30f
+#define ARM_J4_DAMPING_LIMIT_NM         0.20f
 
 #define ARM_J5_DAMPING_ENABLE           1U
-#define ARM_J5_DAMPING_COEFF            0.08f
+#define ARM_J5_DAMPING_COEFF            0.10f
 #define ARM_J5_DAMPING_DEADBAND_RAD_S   0.03f
-#define ARM_J5_DAMPING_LIMIT_NM         0.25f
+#define ARM_J5_DAMPING_LIMIT_NM         0.35f
 
 #define ARM_J6_DAMPING_ENABLE           1U
 #define ARM_J6_DAMPING_COEFF            0.04f
 #define ARM_J6_DAMPING_DEADBAND_RAD_S   0.04f
-#define ARM_J6_DAMPING_LIMIT_NM         0.15f
+#define ARM_J6_DAMPING_LIMIT_NM         0.05f
 
 #define ARM_J7_DAMPING_ENABLE           1U
 #define ARM_J7_DAMPING_COEFF            0.04f
