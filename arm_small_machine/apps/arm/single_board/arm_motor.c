@@ -12,16 +12,18 @@
 #define LOG_LVL LOG_LVL_INFO
 #include "ulog_def.h"
 
-#define ARM_PI_RAD 3.14159265354f
+#define ARM_PI_RAD         3.14159265354f
+#define ARM_DM_MOTOR_COUNT 6U
 
+/** 一个达妙关节从 CAN 注册到软件限位的完整静态描述。 */
 typedef struct
 {
-    const char          *name;
-    CAN_HandleTypeDef   *hcan;
-    uint32_t             tx_id;
-    uint32_t             rx_id;
-    Motor_Type_e         type;
-    Motor_Safety_Limit_s safety;
+    const char          *name;   /**< 离线监测及日志名称。 */
+    CAN_HandleTypeDef   *hcan;   /**< 所属 CAN 控制器。 */
+    uint32_t             tx_id;  /**< 本机发送 CAN ID。 */
+    uint32_t             rx_id;  /**< 电机反馈 CAN ID。 */
+    Motor_Type_e         type;   /**< 电机模块型号。 */
+    Motor_Safety_Limit_s safety; /**< 注册到电机模块的角度限位。 */
 } Arm_Dm_Descriptor_t;
 
 #define ARM_ANGLE_LIMIT_CONFIG(enable_, source_, min_, max_)                                                                                         \
@@ -36,10 +38,12 @@ typedef struct
         .angle_max_rad    = (max_),                                                                                                                  \
     }
 
-static DM_Motor_t       *g_dm_motors[6];
+static DM_Motor_t       *g_dm_motors[ARM_DM_MOTOR_COUNT];
 static DJI_Motor_t      *g_j4_motor;
-static const char *const g_dm_joint_names[6]    = {"J1", "J2", "J3", "J5", "J6", "J7"};
-static const uint8_t     g_dm_snapshot_index[6] = {0U, 1U, 2U, 4U, 5U, 6U};
+static const char *const g_dm_joint_names[ARM_DM_MOTOR_COUNT]    = {"J1", "J2", "J3", "J5", "J6", "J7"};
+static const uint8_t     g_dm_snapshot_index[ARM_DM_MOTOR_COUNT] = {
+    ARM_JOINT_J1, ARM_JOINT_J2, ARM_JOINT_J3, ARM_JOINT_J5, ARM_JOINT_J6, ARM_JOINT_J7,
+};
 
 volatile Arm_Feedback_Snapshot_t g_arm_feedback_snapshot;
 
@@ -88,19 +92,19 @@ static float arm_motor_joint_angle(uint8_t joint_index, float raw_rad)
 {
     switch (joint_index)
     {
-    case 0U:
+    case ARM_JOINT_J1:
         return (ARM_J1_ZERO_VALID != 0U) ? ARM_J1_JOINT_DIR * (raw_rad - ARM_J1_ZERO_RAW_RAD) : 0.0f;
-    case 1U:
+    case ARM_JOINT_J2:
         return ARM_J2_JOINT_DIR * (raw_rad - ARM_J2_ZERO_RAW_RAD);
-    case 2U:
+    case ARM_JOINT_J3:
         return ARM_J3_JOINT_DIR * (raw_rad - ARM_J3_ZERO_RAW_RAD);
-    case 3U:
+    case ARM_JOINT_J4:
         return ARM_J4_JOINT_DIR * (raw_rad - ARM_J4_ZERO_RAW_RAD);
-    case 4U:
+    case ARM_JOINT_J5:
         return ARM_J5_JOINT_DIR * (raw_rad - ARM_J5_ZERO_RAW_RAD);
-    case 5U:
+    case ARM_JOINT_J6:
         return ARM_J6_JOINT_DIR * (raw_rad - ARM_J6_ZERO_RAW_RAD);
-    case 6U:
+    case ARM_JOINT_J7:
         return ARM_J7_JOINT_DIR * (raw_rad - ARM_J7_ZERO_RAW_RAD);
     default:
         return 0.0f;
@@ -118,19 +122,19 @@ static float arm_motor_joint_speed(uint8_t joint_index, float speed_rad_s)
 {
     switch (joint_index)
     {
-    case 0U:
+    case ARM_JOINT_J1:
         return (ARM_J1_ZERO_VALID != 0U) ? ARM_J1_JOINT_DIR * speed_rad_s : 0.0f;
-    case 1U:
+    case ARM_JOINT_J2:
         return ARM_J2_JOINT_DIR * speed_rad_s;
-    case 2U:
+    case ARM_JOINT_J3:
         return ARM_J3_JOINT_DIR * speed_rad_s;
-    case 3U:
+    case ARM_JOINT_J4:
         return ARM_J4_JOINT_DIR * speed_rad_s;
-    case 4U:
+    case ARM_JOINT_J5:
         return ARM_J5_JOINT_DIR * speed_rad_s;
-    case 5U:
+    case ARM_JOINT_J6:
         return ARM_J6_JOINT_DIR * speed_rad_s;
-    case 6U:
+    case ARM_JOINT_J7:
         return ARM_J7_JOINT_DIR * speed_rad_s;
     default:
         return 0.0f;
@@ -146,7 +150,7 @@ static float arm_motor_joint_speed(uint8_t joint_index, float speed_rad_s)
  */
 static float arm_motor_model_angle(uint8_t joint_index, float joint_angle_rad)
 {
-    return (joint_index == 2U) ? (joint_angle_rad + ARM_PI_RAD) : joint_angle_rad;
+    return (joint_index == ARM_JOINT_J3) ? (joint_angle_rad + ARM_PI_RAD) : joint_angle_rad;
 }
 
 /**
@@ -244,12 +248,17 @@ static void arm_motor_register_j4(void)
  */
 static Motor_Base *arm_motor_base(uint8_t joint_index)
 {
-    if (joint_index == 3U) return (g_j4_motor != NULL) ? &g_j4_motor->base : NULL;
-    if (joint_index < 3U) return (g_dm_motors[joint_index] != NULL) ? &g_dm_motors[joint_index]->base : NULL;
+    if (joint_index == ARM_JOINT_J4) return (g_j4_motor != NULL) ? &g_j4_motor->base : NULL;
+    if (joint_index < ARM_JOINT_J4) return (g_dm_motors[joint_index] != NULL) ? &g_dm_motors[joint_index]->base : NULL;
     if (joint_index < ARM_MOTOR_COUNT) return (g_dm_motors[joint_index - 1U] != NULL) ? &g_dm_motors[joint_index - 1U]->base : NULL;
     return NULL;
 }
 
+/**
+ * @brief 注册六个达妙关节和 J4 GM6020，并保持全部关节失能。
+ * @param 无。
+ * @retval 无。
+ */
 void arm_motor_init(void)
 {
     static const Arm_Dm_Descriptor_t dm_descriptors[] = {
@@ -271,23 +280,29 @@ void arm_motor_init(void)
     g_j4_motor = NULL;
     memset((void *)&g_arm_feedback_snapshot, 0, sizeof(g_arm_feedback_snapshot));
 
-    for (size_t i = 0; i < 6U; ++i) arm_motor_register_dm(i, &dm_descriptors[i]);
+    for (size_t i = 0U; i < ARM_DM_MOTOR_COUNT; ++i) arm_motor_register_dm(i, &dm_descriptors[i]);
     arm_motor_register_j4();
     arm_motor_stop_all();
 }
 
+/**
+ * @brief 从电机模块缓存刷新 J1~J7 统一反馈快照。
+ * @param 无。
+ * @retval 无。
+ * @note J4 使用累计角，其余关节保持现有单圈角输入；函数不发送电机命令。
+ */
 void arm_motor_feedback_update(void)
 {
-    for (size_t i = 0; i < 6U; ++i)
+    for (size_t i = 0U; i < ARM_DM_MOTOR_COUNT; ++i)
     {
         DM_Motor_t *motor = g_dm_motors[i];
         if (motor == NULL) continue;
 
-        uint8_t                        joint_index      = g_dm_snapshot_index[i];
+        uint8_t joint_index = g_dm_snapshot_index[i];
         if (joint_index >= ARM_MOTOR_COUNT) continue;
-        volatile Arm_Motor_Feedback_t *feedback         = &g_arm_feedback_snapshot.joint[joint_index];
-        Can_Device                    *can_dev          = (Can_Device *)motor->base.transport_dev;
-        float                          joint_angle_rad  = arm_motor_joint_angle(joint_index, motor->base.measure.single_round_angle);
+        volatile Arm_Motor_Feedback_t *feedback          = &g_arm_feedback_snapshot.joint[joint_index];
+        Can_Device                    *can_dev           = (Can_Device *)motor->base.transport_dev;
+        float                          joint_angle_rad   = arm_motor_joint_angle(joint_index, motor->base.measure.single_round_angle);
         float                          joint_speed_rad_s = arm_motor_joint_speed(joint_index, motor->base.measure.speed_rad);
 
         /* 达妙故障帧可能仍带有位置数据，但不能作为重力模型的可用反馈。 */
@@ -314,10 +329,10 @@ void arm_motor_feedback_update(void)
 
     if (g_j4_motor != NULL)
     {
-        volatile Arm_Motor_Feedback_t *feedback          = &g_arm_feedback_snapshot.joint[3];
+        volatile Arm_Motor_Feedback_t *feedback          = &g_arm_feedback_snapshot.joint[ARM_JOINT_J4];
         Can_Device                    *can_dev           = (Can_Device *)g_j4_motor->base.transport_dev;
-        float                          joint_angle_rad   = arm_motor_joint_angle(3U, g_j4_motor->base.measure.total_angle);
-        float                          joint_speed_rad_s = arm_motor_joint_speed(3U, g_j4_motor->base.measure.speed_rad);
+        float                          joint_angle_rad   = arm_motor_joint_angle(ARM_JOINT_J4, g_j4_motor->base.measure.total_angle);
+        float                          joint_speed_rad_s = arm_motor_joint_speed(ARM_JOINT_J4, g_j4_motor->base.measure.speed_rad);
 
         feedback->online            = arm_motor_feedback_online(&g_j4_motor->base);
         feedback->valid             = g_j4_motor->base.feedback_valid;
@@ -334,15 +349,23 @@ void arm_motor_feedback_update(void)
         feedback->torque_nm         = g_j4_motor->base.measure.torque_nm;
         feedback->joint_angle_rad   = joint_angle_rad;
         feedback->joint_speed_rad_s = joint_speed_rad_s;
-        feedback->model_angle_rad   = arm_motor_model_angle(3U, joint_angle_rad);
+        feedback->model_angle_rad   = arm_motor_model_angle(ARM_JOINT_J4, joint_angle_rad);
         feedback->model_speed_rad_s = joint_speed_rad_s;
         feedback->temperature_1     = g_j4_motor->measure.temperature;
         feedback->temperature_2     = 0U;
     }
 }
 
+/**
+ * @brief 返回统一反馈快照的只读地址。
+ * @return const volatile Arm_Feedback_Snapshot_t* 全局快照地址。
+ */
 const volatile Arm_Feedback_Snapshot_t *arm_motor_feedback_get(void) { return &g_arm_feedback_snapshot; }
 
+/**
+ * @brief 检查 J1~J7 最近反馈是否同时在线且有效。
+ * @return uint8_t 全部满足返回 1，否则返回 0。
+ */
 uint8_t arm_motor_all_feedback_ready(void)
 {
     for (size_t i = 0; i < ARM_MOTOR_COUNT; ++i)
@@ -352,6 +375,13 @@ uint8_t arm_motor_all_feedback_ready(void)
     return 1U;
 }
 
+/**
+ * @brief 将 J1~J7 力矩和使能数组提交给对应电机对象。
+ * @param torque_nm 输入，J1~J7 力矩，单位 N·m。
+ * @param enable 输入，J1~J7 输出使能，非 0 表示启动。
+ * @retval 无。
+ * @note 安全说明：任一数组为空时执行整臂清零失能。
+ */
 void arm_motor_apply_outputs(const float torque_nm[ARM_MOTOR_COUNT], const uint8_t enable[ARM_MOTOR_COUNT])
 {
     if (torque_nm == NULL || enable == NULL)
@@ -378,6 +408,11 @@ void arm_motor_apply_outputs(const float torque_nm[ARM_MOTOR_COUNT], const uint8
     }
 }
 
+/**
+ * @brief 清零力矩并失能所有已注册关节。
+ * @param 无。
+ * @retval 无。
+ */
 void arm_motor_stop_all(void)
 {
     for (uint8_t i = 0U; i < ARM_MOTOR_COUNT; ++i)
@@ -389,9 +424,15 @@ void arm_motor_stop_all(void)
     }
 }
 
+/**
+ * @brief 输出 J1~J7 驱动状态、角度、速度和力矩日志。
+ * @param 无。
+ * @retval 无。
+ * @note 只读驱动缓存，不改变控制状态。
+ */
 void arm_motor_log_status(void)
 {
-    for (size_t i = 0; i < 6U; ++i)
+    for (size_t i = 0U; i < ARM_DM_MOTOR_COUNT; ++i)
     {
         DM_Motor_t *motor = g_dm_motors[i];
         if (motor == NULL) continue;
@@ -410,8 +451,8 @@ void arm_motor_log_status(void)
     {
         float raw_angle   = g_j4_motor->base.measure.single_round_angle;
         float total_angle = g_j4_motor->base.measure.total_angle;
-        float joint_angle = arm_motor_joint_angle(3U, total_angle);
-        float joint_speed = arm_motor_joint_speed(3U, g_j4_motor->base.measure.speed_rad);
+        float joint_angle = arm_motor_joint_angle(ARM_JOINT_J4, total_angle);
+        float joint_speed = arm_motor_joint_speed(ARM_JOINT_J4, g_j4_motor->base.measure.speed_rad);
 
         LOG_I("J4 GM6020 on=%u v=%u en=%u ecd=%u raw=%.3f total=%.3f q=%.3f dq=%.3f rpm=%.1f cur=%d T=%u",
               (unsigned)arm_motor_feedback_online(&g_j4_motor->base), (unsigned)g_j4_motor->base.feedback_valid,

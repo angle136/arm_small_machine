@@ -7,24 +7,26 @@
 #include <stddef.h>
 #include <string.h>
 
+/** 一次重力模型计算的输入角和原始模型力矩。 */
 typedef struct
 {
-    float q2;
-    float q3;
-    float q4;
-    float q5;
-    float tau2_nm;
-    float tau3_nm;
-    float tau4_nm;
-    float tau5_nm;
+    float q2;      /**< J2 重力模型角，单位 rad。 */
+    float q3;      /**< J3 重力模型角，单位 rad。 */
+    float q4;      /**< J4 重力模型角，单位 rad。 */
+    float q5;      /**< J5 重力模型角，单位 rad。 */
+    float tau2_nm; /**< J2 未应用输出比例和方向的模型力矩，单位 N·m。 */
+    float tau3_nm; /**< J3 未应用输出比例和方向的模型力矩，单位 N·m。 */
+    float tau4_nm; /**< J4 未应用输出比例和方向的模型力矩，单位 N·m。 */
+    float tau5_nm; /**< J5 未应用输出比例和方向的模型力矩，单位 N·m。 */
 } Arm_Gravity_Result_t;
 
+/** 单关节粘滞阻尼配置。 */
 typedef struct
 {
-    uint8_t enable;
-    float   coefficient;
-    float   deadband_rad_s;
-    float   torque_limit_nm;
+    uint8_t enable;          /**< 非 0 时计算该关节阻尼。 */
+    float   coefficient;     /**< 粘滞阻尼系数，单位 N·m/(rad/s)。 */
+    float   deadband_rad_s;  /**< 角速度死区，单位 rad/s。 */
+    float   torque_limit_nm; /**< 阻尼分量绝对值上限，单位 N·m。 */
 } Arm_Damping_Config_t;
 
 static const Arm_Damping_Config_t g_arm_damping_config[ARM_MOTOR_COUNT] = {
@@ -42,6 +44,12 @@ static uint8_t g_arm_damping_filter_initialized;
 
 volatile Arm_Gravity_Debug_t g_arm_gravity_debug;
 
+/**
+ * @brief 对角速度应用连续死区，保留死区外的超出量。
+ * @param speed_rad_s 输入角速度，单位 rad/s。
+ * @param deadband_rad_s 输入对称死区半宽，单位 rad/s。
+ * @return float 死区处理后的角速度，单位 rad/s。
+ */
 static float arm_damping_apply_deadband(float speed_rad_s, float deadband_rad_s)
 {
     if (speed_rad_s > deadband_rad_s) return speed_rad_s - deadband_rad_s;
@@ -49,6 +57,12 @@ static float arm_damping_apply_deadband(float speed_rad_s, float deadband_rad_s)
     return 0.0f;
 }
 
+/**
+ * @brief 对阻尼力矩做对称限幅。
+ * @param torque_nm 输入力矩，单位 N·m。
+ * @param limit_nm 输入绝对值上限，单位 N·m。
+ * @return float 限幅后的力矩，单位 N·m。
+ */
 static float arm_damping_limit_torque(float torque_nm, float limit_nm)
 {
     if (torque_nm > limit_nm) return limit_nm;
@@ -56,6 +70,12 @@ static float arm_damping_limit_torque(float torque_nm, float limit_nm)
     return torque_nm;
 }
 
+/**
+ * @brief 清空阻尼滤波器和阻尼调试快照。
+ * @param 无。
+ * @retval 无。
+ * @note 调用关系：初始化或任一安全条件失效时调用；下一次计算从当前速度重新初始化。
+ */
 static void arm_damping_reset(void)
 {
     memset(g_arm_damping_speed_rad_s, 0, sizeof(g_arm_damping_speed_rad_s));
@@ -67,6 +87,7 @@ static void arm_damping_reset(void)
 /**
  * @brief 计算 J1~J7 驱动坐标系粘滞阻尼力矩。
  * @param torque_nm 输出，长度为 ARM_MOTOR_COUNT 的阻尼力矩数组。
+ * @retval 无。
  * @note 使用驱动层速度可直接保证阻尼力矩与电机转动方向相反，不依赖重力模型符号约定。
  */
 static void arm_damping_calculate(float torque_nm[ARM_MOTOR_COUNT])
@@ -116,10 +137,10 @@ static void arm_gravity_calculate(Arm_Gravity_Result_t *result)
     if (result == NULL) return;
 
     const volatile Arm_Feedback_Snapshot_t *feedback = arm_motor_feedback_get();
-    result->q2 = feedback->joint[1].model_angle_rad;
-    result->q3 = feedback->joint[2].model_angle_rad;
-    result->q4 = feedback->joint[3].model_angle_rad;
-    result->q5 = feedback->joint[4].model_angle_rad;
+    result->q2                                       = feedback->joint[ARM_JOINT_J2].model_angle_rad;
+    result->q3                                       = feedback->joint[ARM_JOINT_J3].model_angle_rad;
+    result->q4                                       = feedback->joint[ARM_JOINT_J4].model_angle_rad;
+    result->q5                                       = feedback->joint[ARM_JOINT_J5].model_angle_rad;
 
     const float q23     = result->q2 + result->q3;
     const float sin_q23 = sinf(q23);
@@ -154,6 +175,12 @@ static void arm_gravity_clear_debug_torque(void)
     g_arm_gravity_debug.tau5_cmd_nm = 0.0f;
 }
 
+/**
+ * @brief 初始化重力补偿、阻尼及安全输出状态。
+ * @param 无。
+ * @retval 无。
+ * @note 调用关系：由 robot_control_init() 在线程启动前调用。
+ */
 void arm_gravity_init(void)
 {
     memset((void *)&g_arm_gravity_debug, 0, sizeof(g_arm_gravity_debug));
@@ -161,6 +188,12 @@ void arm_gravity_init(void)
     arm_motor_stop_all();
 }
 
+/**
+ * @brief 完成一次安全门检查、重力/阻尼计算和电机输出提交。
+ * @param 无。
+ * @retval 无。
+ * @note 安全说明：遥控安全门或任一反馈不满足时立即清零并失能全部关节。
+ */
 void arm_gravity_update(void)
 {
     uint8_t remote_enable  = arm_remote_gravity_enabled();
@@ -204,11 +237,17 @@ void arm_gravity_update(void)
         (ARM_J7_ZERO_TORQUE_ENABLE != 0U) || (ARM_DAMPING_ENABLE != 0U && ARM_J7_DAMPING_ENABLE != 0U),
     };
 
-    g_arm_gravity_debug.tau2_cmd_nm = torque_nm[1];
-    g_arm_gravity_debug.tau3_cmd_nm = torque_nm[2];
-    g_arm_gravity_debug.tau4_cmd_nm = torque_nm[3];
-    g_arm_gravity_debug.tau5_cmd_nm = torque_nm[4];
+    g_arm_gravity_debug.tau2_cmd_nm = torque_nm[ARM_JOINT_J2];
+    g_arm_gravity_debug.tau3_cmd_nm = torque_nm[ARM_JOINT_J3];
+    g_arm_gravity_debug.tau4_cmd_nm = torque_nm[ARM_JOINT_J4];
+    g_arm_gravity_debug.tau5_cmd_nm = torque_nm[ARM_JOINT_J5];
 
     arm_motor_apply_outputs(torque_nm, enable);
     g_arm_gravity_debug.output_active = 1U;
 }
+
+/**
+ * @brief 返回最近一次控制周期是否已提交有效输出。
+ * @return uint8_t 已提交返回 1，否则返回 0。
+ */
+uint8_t arm_gravity_output_active(void) { return g_arm_gravity_debug.output_active; }
