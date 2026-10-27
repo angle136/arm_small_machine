@@ -26,6 +26,12 @@ volatile Board_Link_Tx_Debug_t g_board_link_tx_debug;
 volatile Board_Link_Tx_Trace_t g_board_link_tx_trace[BOARD_LINK_TX_TRACE_COUNT];
 #endif
 
+/**
+ * @brief 初始化板间 UART 设备和发送诊断快照。
+ * @param 无。
+ * @retval 无。
+ * @note 仅建立传输资源，不主动发送数据；失败原因保存在 g_board_link_tx_debug.init_state。
+ */
 void board_link_init(void)
 {
 #if BOARD_LINK_TX_ENABLE
@@ -72,7 +78,14 @@ void board_link_init(void)
 }
 
 #if BOARD_LINK_TX_ENABLE
-void board_link_tx(const void *data, uint8_t len)
+/**
+ * @brief 按板间协议封帧并执行一次受限频保护的 UART 发送。
+ * @param data 输入，待复制的 payload 首地址。
+ * @param len 输入，payload 字节数，范围 1~BOARD_LINK_PAYLOAD_MAX。
+ * @return uint8_t 整帧完整写出返回 1；参数无效、限频或 UART 写失败返回 0。
+ * @note 发送诊断与环形 trace 在本函数内同步更新，调用者可据返回值决定是否重试。
+ */
+uint8_t board_link_tx(const void *data, uint8_t len)
 {
     const uint8_t *payload = (const uint8_t *)data;
     const uint32_t now_ms  = (uint32_t)BSP_DWT_GetTimeline_ms();
@@ -81,12 +94,12 @@ void board_link_tx(const void *data, uint8_t len)
     if (g_board_link_uart == NULL || payload == NULL || len == 0U || len > BOARD_LINK_PAYLOAD_MAX)
     {
         g_board_link_tx_debug.invalid_call_count++;
-        return;
+        return 0U;
     }
     if ((uint32_t)(now_ms - g_board_link_last_tx_ms) < BOARD_LINK_TX_INTERVAL_MS)
     {
         g_board_link_tx_debug.rate_limited_count++;
-        return;
+        return 0U;
     }
     g_board_link_last_tx_ms = now_ms;
 
@@ -168,5 +181,7 @@ void board_link_tx(const void *data, uint8_t len)
               (unsigned long)g_board_link_tx_debug.last_duration_us, (unsigned long)g_board_link_tx_debug.max_duration_us, result, (unsigned)seq,
               (unsigned long)BOARD_LINK_UART.ErrorCode);
     }
+
+    return (result == (int)(4U + len)) ? 1U : 0U;
 }
 #endif

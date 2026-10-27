@@ -4,21 +4,22 @@
 #include "arm_def.h"
 #include <stdint.h>
 
+/** 单关节反馈快照；由控制线程刷新，其他 APP 逻辑只读。 */
 typedef struct
 {
-    uint8_t  valid;          /**< 已收到可用反馈。 */
-    uint8_t  online;         /**< 离线检测判定在线。 */
-    uint8_t  enabled;        /**< 电机软件输出使能。 */
-    uint8_t  feedback_id;    /**< 达妙反馈 ID；GM6020 当前填 0。 */
-    uint32_t tx_id;          /**< 本机发送 CAN ID。 */
-    uint32_t rx_id;          /**< 电机反馈 CAN ID。 */
-    uint16_t raw_position;   /**< 达妙 16 位位置或 GM6020 编码器值。 */
-    int16_t  raw_speed;      /**< GM6020 原始转速；达妙当前填 0。 */
-    int16_t  raw_current;    /**< GM6020 原始电流；达妙当前填 0。 */
-    float    angle_raw_rad;  /**< 驱动层单圈角度，单位 rad。 */
-    float    angle_rad;      /**< 驱动层累计角度，单位 rad。 */
-    float    speed_rad_s;    /**< 驱动层角速度，单位 rad/s。 */
-    float    torque_nm;      /**< 驱动层力矩反馈/估算，单位 N·m。 */
+    uint8_t  valid;             /**< 已收到可用反馈。 */
+    uint8_t  online;            /**< 离线检测判定在线。 */
+    uint8_t  enabled;           /**< 电机软件输出使能。 */
+    uint8_t  feedback_id;       /**< 达妙反馈 ID；GM6020 当前填 0。 */
+    uint32_t tx_id;             /**< 本机发送 CAN ID。 */
+    uint32_t rx_id;             /**< 电机反馈 CAN ID。 */
+    uint16_t raw_position;      /**< 达妙 16 位位置或 GM6020 编码器值。 */
+    int16_t  raw_speed;         /**< GM6020 原始转速；达妙当前填 0。 */
+    int16_t  raw_current;       /**< GM6020 原始电流；达妙当前填 0。 */
+    float    angle_raw_rad;     /**< 驱动层单圈角度，单位 rad。 */
+    float    angle_rad;         /**< 驱动层累计角度，单位 rad。 */
+    float    speed_rad_s;       /**< 驱动层角速度，单位 rad/s。 */
+    float    torque_nm;         /**< 驱动层力矩反馈/估算，单位 N·m。 */
     float    joint_angle_rad;   /**< 软件零点和方向修正后的关节角，单位 rad。 */
     float    joint_speed_rad_s; /**< 机械关节坐标系角速度，单位 rad/s。 */
     float    model_angle_rad;   /**< 重力补偿模型角，单位 rad。 */
@@ -27,12 +28,13 @@ typedef struct
     uint8_t  temperature_2;     /**< 达妙转子温度；GM6020 当前填 0。 */
 } Arm_Motor_Feedback_t;
 
+/** J1~J7 同一控制周期的反馈集合，下标使用 Arm_Joint_Index_t。 */
 typedef struct
 {
-    Arm_Motor_Feedback_t joint[ARM_MOTOR_COUNT];
+    Arm_Motor_Feedback_t joint[ARM_MOTOR_COUNT]; /**< J1~J7 固定顺序的反馈。 */
 } Arm_Feedback_Snapshot_t;
 
-/** Ozone 观察用的 J1~J7 电机反馈快照。 */
+/** Ozone 观察用的 J1~J7 电机反馈快照；业务代码应通过 arm_motor_feedback_get() 读取。 */
 extern volatile Arm_Feedback_Snapshot_t g_arm_feedback_snapshot;
 
 /**
