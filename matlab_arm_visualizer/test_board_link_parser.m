@@ -60,20 +60,5 @@ assert(isempty(remain3), '测试数据解析后不应残留字节。');
 assert(stats3.invalidLength >= 1, '未检测到错误长度。');
 assert(stats3.invalidTail >= 1, '未检测到错误帧尾。');
 
-% -------------------------------------------------------------------------
-% 测试 3：旧版 LEN=32 帧继续供 arm_imu/J-Link 使用，缺省状态为 0。
-% -------------------------------------------------------------------------
-legacyPayload = typecast(expectedValues, 'uint8');
-legacyFrame = [uint8(hex2dec('AA')), uint8(32), uint8(8), legacyPayload, ...
-               uint8(hex2dec('FF'))];
-[samples4, seq4, raw4, remain4, stats4, status4] = parse_board_link_bytes( ...
-    uint8([]), legacyFrame);
-assert(size(samples4, 1) == 1 && seq4 == uint8(8), ...
-       '旧版 LEN=32 帧兼容解析失败。');
-assert(numel(raw4{1}) == 36 && isempty(remain4), ...
-       '旧版完整帧长度或残留缓存错误。');
-assert(stats4.acceptedFrames == 1 && status4 == uint32(0), ...
-       '旧版帧应被接受并返回状态 0。');
-
-fprintf('[PASS] board_link 解析器测试通过：新旧载荷、状态位及错误恢复均已覆盖。\n');
+fprintf('[PASS] board_link 解析器测试通过：状态位、残帧、乱码和错误恢复均已覆盖。\n');
 end

@@ -5,6 +5,7 @@ function enable_arm_camera_controls(fig, ax, defaultView)
 %   V 键               - 按编号循环 10 个预设视图。
 %   数字键 1~9、0     - 直接选择视图 01~09、10。
 %   F 键               - 保持当前方向，重新完整取景。
+%   R 键               - 强制使用最近一帧关节角刷新模型。
 %   H 键或 Home 键     - 一键回到固定主视图 05。
 %   按住鼠标左键拖动 - 自由旋转视角。
 %   按住鼠标中键拖动 - 仅绕基座竖直轴水平旋转。
@@ -83,6 +84,14 @@ applyNumberedView(currentViewIndex);
             requestedView = mod(currentViewIndex, 10) + 1;
         elseif strcmpi(event.Key, 'f')
             fitCameraToWorkspace();
+            return;
+        elseif strcmpi(event.Key, 'r')
+            if isappdata(fig, 'ArmForceRefresh')
+                refreshFunction = getappdata(fig, 'ArmForceRefresh');
+                if isa(refreshFunction, 'function_handle')
+                    refreshFunction();
+                end
+            end
             return;
         elseif strcmpi(event.Key, 'h') || strcmpi(event.Key, 'home')
             applyNumberedView(5);

@@ -103,7 +103,7 @@ git clone git@github.com:HebutMas/mas_embedded_threadx.git // ssh
 编辑 `apps/config.cmake` 中的默认值：
 
 ```cmake
-set(ROBOT "arm" CACHE STRING "Target robot")   # arm / arm_dual_imu
+set(ROBOT "arm" CACHE STRING "Target robot")   # arm
 set(BOARD "single" CACHE STRING "Board role")  # single / gimbal / chassis
 ```
 

@@ -19,20 +19,24 @@ matlab_arm_visualizer/
 Toolbox，然后克隆整个仓库。在 MATLAB“当前文件夹”中进入仓库根目录即可运行，
 不需要修改模型路径。可先执行 `test_portable_package` 检查模型文件是否完整。
 
-## 当前固件协议
+## 数据协议
 
-当前工程不是 `#角度,...\r\n` 文本协议，而是固定 36 字节二进制帧：
+当前工程不是 `#角度,...\r\n` 文本协议。`arm` 串口帧为 40 字节：
 
 ```text
-0xAA | LEN=32 | SEQ | J1...J7, TOOL（8个little-endian float32）| 0xFF
+0xAA | LEN=36 | SEQ | J1...J7, TOOL（8个little-endian float32）| STATUS（uint32）| 0xFF
 ```
 
+`STATUS` 使用位掩码：`bit0=保持当前姿态`，`bit1=完全跟随`，两位互斥。
+
 - 波特率：115200，8N1（当前 `apps/arm/robot.cmake` 的 `BOARD_LINK_BAUD`）。
-- 固件约每 10 ms 发送一帧。
+- `arm` 串口约每 10 ms 发送一帧。
 - J1~J7 已经是机械关节角，单位为弧度。
 - 每帧的 J1~J7 是当前位置的绝对关节角，不是相对上一帧的增量；MATLAB 直接用最新一帧覆盖模型配置。
-- TOOL 是夹爪两状态命令：遥控器通道数组下标 4 为 `240` 时发送 `+1.0f`，
-  为 `1807` 时发送 `-1.0f`；遥控器离线或通道值无效时发送 `-1.0f`。
+- 串口模式对应 `apps/arm`：J1~J7 是实机关节角，TOOL 为夹爪命令
+  （收紧 `+5.0f`、释放 `-5.0f`）；遥控数组 `[6]` 下档发送完全跟随，
+  上档、中档、离线或异常值发送保持当前姿态。
+- MATLAB 使用已标定的 URDF 方向修正：J1~J5 取反，J6~J7 保持。
 - MATLAB 端不得再次执行 `deg2rad`，也不做增量累加。固件零位到 CAD/URDF
   零位的固定转换集中写在 `map_arm_configuration.m`，不会改变右侧显示的原始值。
 
@@ -83,7 +87,19 @@ session.getInversion()
 session.stop();
 ```
 
-也可以编辑并运行 `run_arm_visualizer.m`。
+## 一键启动
+
+- 双击 `start_arm_serial.bat`：自动启动 MATLAB。串口优先选择 COM15；若 COM15
+  不可用，则选择系统报告的第一个可用端口。对应 MATLAB 脚本是
+  `run_arm_serial_visualizer.m`。
+串口入口使用 `parse_board_link_bytes.m`、关节映射和 3D 显示。
+
+实时窗口右侧提供“刷新姿态 (R)”按钮，也可以直接按 `R`。正常收帧时，刷新会解除
+可能残留的相机拖动锁，并使用最近一帧关节角强制重绘模型。
+拖动相机期间如果按下板子标零键，新姿态会保留为待刷新状态，松开鼠标后自动补画；
+不会再将因相机交互而跳过的帧误记为已绘制。
+
+`run_arm_visualizer.m` 和 `arm_serial_visualizer("COMx")` 串口入口继续保留。
 
 `show_placeholder_arm` 只是离线模型预览，因此不会要求选择端口。运行
 `arm_serial_visualizer()` 或 `run_arm_visualizer.m` 时才会弹出串口选择窗口。

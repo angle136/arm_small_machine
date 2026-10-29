@@ -1,8 +1,13 @@
-function portName = select_serial_port()
-%SELECT_SERIAL_PORT 列出当前可用串口，并让用户选择机械臂连接端口。
+function portName = select_serial_port(autoSelect)
+%SELECT_SERIAL_PORT 自动选择或列出当前可用的机械臂串口。
 %
 % 返回：
 %   portName - 例如 "COM5"；取消选择时返回空字符串 ""。
+
+if nargin < 1
+    autoSelect = false;
+end
+validateattributes(autoSelect, {'logical'}, {'scalar'});
 
 availablePorts = serialportlist('available');
 portName = "";
@@ -22,6 +27,13 @@ preferredPort = "COM15";
 preferredIndex = find(strcmpi(availablePorts, preferredPort), 1, 'first');
 if ~isempty(preferredIndex) && preferredIndex ~= 1
     availablePorts([1, preferredIndex]) = availablePorts([preferredIndex, 1]);
+end
+
+if autoSelect
+    portName = availablePorts(1);
+    fprintf('[SERIAL] 自动选择 %s（可用端口：%s）。\n', ...
+        portName, strjoin(availablePorts, ', '));
+    return;
 end
 
 if usejava('desktop')

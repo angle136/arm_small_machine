@@ -5,8 +5,7 @@ function [samples, sequences, rawFrames, remainingBuffer, stats, statuses] = par
 %   0xAA | LEN=36 | SEQ | 8 个 little-endian float32 | uint32 状态位 | 0xFF
 %
 % 8 个 float32 中，前 7 个依次映射 J1~J7，单位已经是 rad，第 8 个是工具量。
-% uint32 状态位中 bit0=保持当前姿态，bit1=完全跟随。为兼容 arm_imu RTT，仍接受
-% LEN=32 的旧帧，并将其状态返回为 0。
+% uint32 状态位中 bit0=保持当前姿态，bit1=完全跟随。
 % 该函数只负责拆帧，不修改角度。
 %
 % 输入：
@@ -19,11 +18,11 @@ function [samples, sequences, rawFrames, remainingBuffer, stats, statuses] = par
 %   rawFrames       - 1×N cell，每项保存一帧原始字节，便于调试打印。
 %   remainingBuffer - 不完整尾帧，留给下一次调用继续解析。
 %   stats           - 本次解析过程中的丢弃和错误统计。
-%   statuses        - 1×N uint32，arm 状态位；旧版 arm_imu 帧为 0。
+%   statuses        - 1×N uint32，arm 状态位。
 
 FRAME_HEADER = uint8(hex2dec('AA'));
 FRAME_TAIL = uint8(hex2dec('FF'));
-EXPECTED_PAYLOAD_LENGTHS = [32, 36];
+EXPECTED_PAYLOAD_LENGTH = 36;
 FLOAT_PAYLOAD_LENGTH = 32;
 VALUE_COUNT = 8;
 
@@ -62,7 +61,7 @@ while true
     end
 
     payloadLength = double(remainingBuffer(2));
-    if ~ismember(payloadLength, EXPECTED_PAYLOAD_LENGTHS)
+    if payloadLength ~= EXPECTED_PAYLOAD_LENGTH
         % 长度字段不正确时仅丢弃当前 0xAA，随后继续寻找下一个帧头。
         stats.invalidLength = stats.invalidLength + 1;
         stats.discardedBytes = stats.discardedBytes + 1;
@@ -86,10 +85,7 @@ while true
     rawFrame = remainingBuffer(1:frameLength);
     floatPayload = rawFrame(4:3 + FLOAT_PAYLOAD_LENGTH);
     values = typecast(floatPayload, 'single');
-    status = uint32(0);
-    if payloadLength == 36
-        status = typecast(rawFrame(4 + FLOAT_PAYLOAD_LENGTH:3 + payloadLength), 'uint32');
-    end
+    status = typecast(rawFrame(4 + FLOAT_PAYLOAD_LENGTH:3 + payloadLength), 'uint32');
 
     % STM32 和常见 Windows PC 都是小端。保留大端主机兼容处理，避免隐式假设。
     [~, ~, endian] = computer;
