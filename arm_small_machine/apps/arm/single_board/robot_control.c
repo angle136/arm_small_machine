@@ -15,7 +15,10 @@
 #define LOG_LVL LOG_LVL_INFO
 #include "ulog_def.h"
 
-#define ARM_LINK_PAYLOAD_LEN ((uint8_t)(ARM_BOARD_LINK_FIELD_COUNT * sizeof(float)))
+_Static_assert(sizeof(float) == 4U, "arm board_link requires 32-bit float");
+_Static_assert(ARM_BOARD_LINK_STATUS_OFFSET == 32U, "arm board_link status offset changed");
+_Static_assert(ARM_BOARD_LINK_PAYLOAD_LEN == 36U, "arm board_link payload length changed");
+_Static_assert(ARM_BOARD_LINK_PAYLOAD_LEN <= BOARD_LINK_PAYLOAD_MAX, "arm board_link payload buffer is too small");
 
 static TX_THREAD                  g_arm_status_thread;
 static TX_THREAD                  g_arm_control_thread;
@@ -86,8 +89,28 @@ static float arm_link_gripper_command(void)
 }
 
 /**
- * @brief 构造一帧活动状态下的 J1~J7 位置及夹爪速度 payload。
- * @param payload 输出，容量至少为 ARM_LINK_PAYLOAD_LEN 的字节缓冲区。
+ * @brief 将遥控数组 [6] 三档开关转换为板间控制状态位。
+ * @return uint32_t 下档为完全跟随；上档、中档、离线或异常值均为保持当前姿态。
+ * @note 返回值始终只置一个状态位，满足接收端两位互斥约定。
+ */
+static uint32_t arm_link_control_status(void)
+{
+    if (arm_remote_is_online() == 0U) return ARM_BOARD_LINK_STATUS_HOLD_CURRENT;
+
+    const int16_t mode_raw = arm_remote_channel_get(ARM_REMOTE_AUX_CHANNEL_INDEX);
+    if (mode_raw == ARM_REMOTE_AUX_DOWN_RAW) return ARM_BOARD_LINK_STATUS_FULL_FOLLOW;
+
+    if (mode_raw == ARM_REMOTE_AUX_UP_RAW || mode_raw == ARM_REMOTE_AUX_MIDDLE_RAW)
+    {
+        return ARM_BOARD_LINK_STATUS_HOLD_CURRENT;
+    }
+
+    return ARM_BOARD_LINK_STATUS_HOLD_CURRENT;
+}
+
+/**
+ * @brief 构造一帧活动状态下的 J1~J7 位置、夹爪速度及控制状态 payload。
+ * @param payload 输出，容量至少为 ARM_BOARD_LINK_PAYLOAD_LEN 的字节缓冲区。
  * @retval 无。
  * @note 调用者持有 g_arm_link_payload_mutex；角度来源和发送坐标映射保持固定协议约定。
  */
@@ -110,6 +133,9 @@ static void arm_link_build_active_payload(uint8_t payload[BOARD_LINK_PAYLOAD_MAX
 
     const float tool_value = arm_link_gripper_command();
     memcpy(&payload[ARM_BOARD_LINK_GRIPPER_FIELD_INDEX * sizeof(float)], &tool_value, sizeof(tool_value));
+
+    const uint32_t control_status = arm_link_control_status();
+    memcpy(&payload[ARM_BOARD_LINK_STATUS_OFFSET], &control_status, sizeof(control_status));
 }
 
 /**
@@ -122,7 +148,7 @@ static void arm_link_deactivate_locked(void)
 {
     if (g_arm_link_tx_enabled != 0U)
     {
-        memcpy(g_arm_link_stop_payload, g_arm_link_payload, ARM_MOTOR_COUNT * sizeof(float));
+        memcpy(g_arm_link_stop_payload, g_arm_link_payload, ARM_BOARD_LINK_PAYLOAD_LEN);
         const float tool_stop = ARM_GRIPPER_STOP_COMMAND;
         memcpy(&g_arm_link_stop_payload[ARM_BOARD_LINK_GRIPPER_FIELD_INDEX * sizeof(float)], &tool_stop, sizeof(tool_stop));
         g_arm_link_stop_pending = 1U;
@@ -179,14 +205,14 @@ static uint8_t arm_link_take_tx_payload(uint8_t *stop_frame)
 
     if (g_arm_link_stop_pending != 0U)
     {
-        memcpy(g_arm_link_tx_payload, g_arm_link_stop_payload, ARM_LINK_PAYLOAD_LEN);
+        memcpy(g_arm_link_tx_payload, g_arm_link_stop_payload, ARM_BOARD_LINK_PAYLOAD_LEN);
         g_arm_link_stop_pending = 0U;
         send_ready              = 1U;
         *stop_frame             = 1U;
     }
     else if (g_arm_link_tx_enabled != 0U)
     {
-        memcpy(g_arm_link_tx_payload, g_arm_link_payload, ARM_LINK_PAYLOAD_LEN);
+        memcpy(g_arm_link_tx_payload, g_arm_link_payload, ARM_BOARD_LINK_PAYLOAD_LEN);
         send_ready = 1U;
     }
 
@@ -226,7 +252,7 @@ static void arm_link_tx_task(ULONG thread_input)
         if (send_ready != 0U && (stop_frame != 0U || g_arm_link_tx_enabled != 0U))
         {
             /* UART 等待发生在锁外，控制线程仍可继续刷新安全状态和快照。 */
-            const uint8_t tx_success = board_link_tx(g_arm_link_tx_payload, ARM_LINK_PAYLOAD_LEN);
+            const uint8_t tx_success = board_link_tx(g_arm_link_tx_payload, (uint8_t)ARM_BOARD_LINK_PAYLOAD_LEN);
             if (stop_frame != 0U && tx_success == 0U) arm_link_retry_stop_frame();
         }
 
