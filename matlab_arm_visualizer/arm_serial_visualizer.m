@@ -1,8 +1,8 @@
 function session = arm_serial_visualizer(portName, varargin)
-%ARM_SERIAL_VISUALIZER 实时接收 7 轴关节角并刷新 rigidBodyTree。
+%ARM_SERIAL_VISUALIZER 从串口接收 7 轴关节角并刷新 rigidBodyTree。
 %
-% 当前固件使用二进制 board_link 协议，而不是以 # 开头的文本行：
-%   0xAA | 32 | SEQ | J1~J7 + TOOL（8个float32）| 0xFF
+% 当前 arm 固件使用二进制 board_link 协议，而不是以 # 开头的文本行：
+%   0xAA | 36 | SEQ | J1~J7 + TOOL（8个float32）| STATUS（uint32）| 0xFF
 % 关节角已经是 rad，因此本程序不会再次调用 deg2rad。
 %
 % 基本使用：
@@ -132,27 +132,36 @@ try
                   'Units', 'normalized', ...
                   'Position', [0.04, 0.08, 0.70, 0.86]);
         statusPanel = uipanel('Parent', fig, ...
-                              'Title', '串口接收状态', ...
+                              'Title', '数据接收状态', ...
                               'Units', 'normalized', ...
                               'Position', [0.77, 0.08, 0.22, 0.86], ...
                               'BackgroundColor', [0.97, 0.97, 0.97]);
         statusText = uicontrol('Parent', statusPanel, ...
                                'Style', 'text', ...
                                'Units', 'normalized', ...
-                               'Position', [0.04, 0.03, 0.92, 0.94], ...
+                               'Position', [0.04, 0.03, 0.92, 0.87], ...
                                'HorizontalAlignment', 'left', ...
                                'FontName', 'Microsoft YaHei UI', ...
                                'FontSize', 10, ...
                                'BackgroundColor', [0.97, 0.97, 0.97], ...
                                'String', '正在初始化...');
+        uicontrol('Parent', statusPanel, ...
+                  'Style', 'pushbutton', ...
+                  'Units', 'normalized', ...
+                  'Position', [0.58, 0.92, 0.38, 0.055], ...
+                  'FontName', 'Microsoft YaHei UI', ...
+                  'FontSize', 10, ...
+                  'String', '刷新姿态 (R)', ...
+                  'Callback', @onRefreshButton);
         drawRobot(zeros(1, 7), uint8(0));
         updateStatusPanel();
+        setappdata(fig, 'ArmForceRefresh', @forceRefreshView);
         enable_arm_camera_controls(fig, ax, defaultView);
         set(fig, 'CloseRequestFcn', @onFigureClose);
     end
 
     timerObject = timer( ...
-        'Name', 'ArmSerialVisualizerTimer', ...
+        'Name', 'ArmBoardLinkVisualizerTimer', ...
         'ExecutionMode', 'fixedSpacing', ...
         'Period', timerPeriod, ...
         'BusyMode', 'drop', ...
@@ -166,7 +175,7 @@ catch startupError
 end
 
 fprintf('[START] %s, %d baud, 8N1, timer=%.3f s, visualize=%d\n', ...
-        portName, baudRate, timerPeriod, visualize);
+    portName, baudRate, timerPeriod, visualize);
 fprintf('[INFO] 原始值和关节角显示在图窗右侧；按 V 键循环编号视图。\n');
 
 % 返回轻量控制句柄。串口对象保留在闭包内，stop() 后会解除引用并释放 COM 口。
@@ -174,6 +183,7 @@ session.stop = @stopSession;
 session.status = @getStatus;
 session.setInversion = @setInversion;
 session.getInversion = @getInversion;
+session.refresh = @forceRefreshView;
 
 % -------------------------------------------------------------------------
 % 3. timer 回调：非阻塞读取、拆帧、调试打印和绘图
@@ -186,6 +196,11 @@ session.getInversion = @getInversion;
         try
             currentElapsed = toc(sessionClock);
             availableByteCount = serialDevice.NumBytesAvailable;
+            if availableByteCount > 0
+                newBytes = read(serialDevice, availableByteCount, 'uint8');
+            else
+                newBytes = zeros(1, 0, 'uint8');
+            end
             if availableByteCount <= 0
                 if consoleDiagnostics && currentElapsed - lastConsoleReportElapsed >= 2.0
                     fprintf('[WAIT] %s 暂无新字节，累计=%d byte，有效帧=%d。\n', ...
@@ -199,7 +214,6 @@ session.getInversion = @getInversion;
                 return;
             end
 
-            newBytes = read(serialDevice, availableByteCount, 'uint8');
             totalByteCount = totalByteCount + numel(newBytes);
             readChunkCount = readChunkCount + 1;
             lastReceiveElapsed = currentElapsed;
@@ -246,9 +260,10 @@ session.getInversion = @getInversion;
                     currentElapsed - lastRenderElapsed >= renderPeriod && ...
                     (any(isnan(lastRenderedAngles)) || ...
                      any(abs(samples(end, 1:7) - lastRenderedAngles) > 1e-5))
-                drawRobot(samples(end, 1:7), sequences(end));
-                lastRenderElapsed = currentElapsed;
-                lastRenderedAngles = samples(end, 1:7);
+                if drawRobot(samples(end, 1:7), sequences(end))
+                    lastRenderElapsed = currentElapsed;
+                    lastRenderedAngles = samples(end, 1:7);
+                end
             end
             if currentElapsed - lastStatusUpdateElapsed >= 0.25
                 updateStatusPanel();
@@ -297,7 +312,7 @@ session.getInversion = @getInversion;
 
         currentElapsed = toc(sessionClock);
         if totalByteCount == 0
-            receiveState = '未收到任何串口字节';
+            receiveState = '未收到任何数据字节';
         elseif validFrameCount == 0
             receiveState = '已收到字节，但尚未解析出有效帧';
         else
@@ -333,11 +348,12 @@ session.getInversion = @getInversion;
         end
 
         statusText.String = sprintf([ ...
-            '端口：%s @ %.0f 8N1\n\n' ...
+            '数据源：%s\n\n' ...
             'V键：循环 01~10 编号视图\n' ...
             '数字键：直接选择对应视图\n' ...
             'H/Home键：回到固定主视图 05\n' ...
             'F键：当前方向重新完整取景\n' ...
+            'R键：使用最新关节角强制刷新\n' ...
             '左键拖动：自由旋转\n' ...
             '中键拖动：仅绕基座水平旋转 | 滚轮：缩放\n\n' ...
             '状态：%s\n' ...
@@ -355,7 +371,7 @@ session.getInversion = @getInversion;
             '方向取反标志 J1~J7（0保持，1取反）\n%s\n\n' ...
             'TOOL：%s\n\n' ...
             '最新原始字节（最多16B）\n%s'], ...
-            portName, baudRate, receiveState, totalByteCount, readChunkCount, ...
+            portName, receiveState, totalByteCount, readChunkCount, ...
             validFrameCount, invalidFrameCount, droppedFrameCount, ...
             numel(rxBuffer), sequenceText, receiveAgeText, validAgeText, ...
             jointRadText, jointDegText, sprintf('%d ', inversionFlags), ...
@@ -374,7 +390,8 @@ session.getInversion = @getInversion;
 % -------------------------------------------------------------------------
 % 5. rigidBodyTree 实时刷新
 % -------------------------------------------------------------------------
-    function drawRobot(jointAnglesRad, ~)
+    function rendered = drawRobot(jointAnglesRad, ~)
+        rendered = false;
         if ~isgraphics(fig) || getCameraBusy(fig)
             return;
         end
@@ -435,6 +452,7 @@ session.getInversion = @getInversion;
         end
 
         drawnow limitrate;
+        rendered = true;
     end
 
     function value = getCameraBusy(figureHandle)
@@ -459,6 +477,35 @@ session.getInversion = @getInversion;
 % -------------------------------------------------------------------------
     function onFigureClose(~, ~)
         stopSession();
+    end
+
+    function onRefreshButton(~, ~)
+        forceRefreshView();
+    end
+
+    function forceRefreshView()
+        if isStopping || ~visualize || isempty(fig) || ~isgraphics(fig)
+            return;
+        end
+
+        currentElapsed = toc(sessionClock);
+        setappdata(fig, 'ArmCameraInteracting', false);
+        fig.Pointer = 'arrow';
+        lastRenderedAngles = nan(1, 7);
+
+        if ~isempty(timerObject) && isvalid(timerObject) && ...
+                strcmp(timerObject.Running, 'off')
+            start(timerObject);
+        end
+
+        if ~any(isnan(latestJointAngles))
+            if drawRobot(latestJointAngles, lastSequence)
+                lastRenderElapsed = currentElapsed;
+                lastRenderedAngles = latestJointAngles;
+            end
+        end
+        updateStatusPanel();
+        drawnow;
     end
 
     function stopSession()
@@ -489,6 +536,9 @@ session.getInversion = @getInversion;
         end
 
         if ~isempty(fig) && isgraphics(fig)
+            if isappdata(fig, 'ArmForceRefresh')
+                rmappdata(fig, 'ArmForceRefresh');
+            end
             set(fig, 'CloseRequestFcn', '');
             delete(fig);
         end

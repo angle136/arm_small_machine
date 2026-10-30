@@ -7,6 +7,8 @@
 #ifndef _ARM_DEF_H_
 #define _ARM_DEF_H_
 
+#include <stdint.h>
+
 #define ARM_MOTOR_COUNT 7U
 
 /** J1~J7 在反馈、力矩及板间协议数组中的固定索引。 */
@@ -21,9 +23,15 @@ typedef enum
     ARM_JOINT_J7,
 } Arm_Joint_Index_t;
 
-/* board_link 载荷固定为 J1~J7 位置和第 8 个夹爪速度，共 8 个 float。 */
+/* board_link 前 32 字节固定为 J1~J7 位置和第 8 个夹爪速度，共 8 个 float。 */
 #define ARM_BOARD_LINK_GRIPPER_FIELD_INDEX ARM_MOTOR_COUNT
 #define ARM_BOARD_LINK_FIELD_COUNT         (ARM_MOTOR_COUNT + 1U)
+#define ARM_BOARD_LINK_STATUS_OFFSET       (ARM_BOARD_LINK_FIELD_COUNT * sizeof(float))
+#define ARM_BOARD_LINK_PAYLOAD_LEN         (ARM_BOARD_LINK_STATUS_OFFSET + sizeof(uint32_t))
+
+/* board_link 最后 4 字节是 uint32_t 位掩码；两种模式互斥。 */
+#define ARM_BOARD_LINK_STATUS_HOLD_CURRENT (1UL << 0)
+#define ARM_BOARD_LINK_STATUS_FULL_FOLLOW  (1UL << 1)
 
 /* board_link 第 8 个 float：夹爪闭合、停止、释放三状态命令。 */
 #define ARM_GRIPPER_CLOSE_COMMAND          5.0f
