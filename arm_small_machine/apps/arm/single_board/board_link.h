@@ -1,15 +1,28 @@
 /*
- * 机械臂控制板到接收板的单向 UART 帧传输层。
+ * 机械臂板间 UART 通信层。
  *
- * 本模块只负责 0xAA | LEN | SEQ | payload | 0xFF 封帧、限频、发送和诊断，
- * 不解释 payload 内的关节位置或夹爪速度语义。
+ * 线协议固定为 0xAA | LEN | SEQ | payload | 0xFF。本模块不解释 payload，
+ * 同时提供可注册多链路的通用接口和保持现有 APP 调用不变的默认链路兼容接口。
  */
 #ifndef _ARM_BOARD_LINK_H_
 #define _ARM_BOARD_LINK_H_
 
 #include <stdint.h>
 
-/* 参考接收端协议：0xAA | LEN | SEQ | payload | 0xFF。 */
+#define BOARD_LINK_HDR  0xAAU
+#define BOARD_LINK_TAIL 0xFFU
+
+#ifndef BOARD_LINK_MAX_DEVICES
+#define BOARD_LINK_MAX_DEVICES 4U
+#endif
+#ifndef BOARD_LINK_MAX_PAYLOAD
+#define BOARD_LINK_MAX_PAYLOAD 64U
+#endif
+#ifndef BOARD_LINK_MAX_RX_BUF
+#define BOARD_LINK_MAX_RX_BUF 256U
+#endif
+
+/* 默认机械臂链路配置；由 CMake 生成的 module_config.h 优先覆盖。 */
 #ifndef BOARD_LINK_UART
 #define BOARD_LINK_UART huart6
 #endif
@@ -31,90 +44,136 @@
 #ifndef BOARD_LINK_TX_TIMEOUT_MS
 #define BOARD_LINK_TX_TIMEOUT_MS 10U
 #endif
+#ifndef BOARD_LINK_RX_BUF_SIZE
+#define BOARD_LINK_RX_BUF_SIZE 256U
+#endif
+#ifndef BOARD_LINK_OFFLINE_ENABLE
+#define BOARD_LINK_OFFLINE_ENABLE 1
+#endif
+#ifndef BOARD_LINK_OFFLINE_TIMEOUT_MS
+#define BOARD_LINK_OFFLINE_TIMEOUT_MS 100U
+#endif
+#ifndef BOARD_LINK_OFFLINE_BEEP_TIMES
+#define BOARD_LINK_OFFLINE_BEEP_TIMES 0U
+#endif
 #ifndef BOARD_LINK_TX_TRACE_COUNT
 #define BOARD_LINK_TX_TRACE_COUNT 256U
 #endif
 
-#if BOARD_LINK_TX_ENABLE
+#if BOARD_LINK_PAYLOAD_MAX > BOARD_LINK_MAX_PAYLOAD
+#error "BOARD_LINK_PAYLOAD_MAX exceeds BOARD_LINK_MAX_PAYLOAD"
+#endif
+#if BOARD_LINK_RX_BUF_SIZE > BOARD_LINK_MAX_RX_BUF
+#error "BOARD_LINK_RX_BUF_SIZE exceeds BOARD_LINK_MAX_RX_BUF"
+#endif
+
+/** 通用逐字节帧解析状态。 */
+typedef struct
+{
+    uint8_t state;  /**< 0=帧头，1=LEN，2=SEQ，3=payload，4=帧尾。 */
+    uint8_t length; /**< 当前帧 payload 长度。 */
+    uint8_t index;  /**< 当前 payload 写入下标。 */
+    uint8_t seq;    /**< 当前帧序号。 */
+    uint8_t data[BOARD_LINK_MAX_PAYLOAD];
+} BoardLinkParser_t;
+
+/** 通用链路运行时配置。 */
+typedef struct
+{
+    void       *huart;              /**< UART_HandleTypeDef *。 */
+    uint32_t    baud;               /**< UART 波特率。 */
+    uint8_t     rx_enable;          /**< 1=启用 DMA 接收。 */
+    uint8_t     tx_enable;          /**< 1=启用发送。 */
+    uint16_t    tx_interval_ms;     /**< 最小发送间隔。 */
+    uint16_t    tx_timeout_ms;      /**< 单次发送超时。 */
+    uint16_t    rx_buf_size;        /**< DMA 接收缓冲大小，0 使用最大值。 */
+    const char *name;               /**< 日志和离线设备名称。 */
+    uint32_t    offline_timeout_ms; /**< 接收离线超时。 */
+    uint8_t     offline_enable;     /**< 1=注册 Offline 设备。 */
+    uint8_t     offline_beep_times; /**< 掉线蜂鸣次数。 */
+} BoardLink_Config_t;
+
+typedef struct BoardLink BoardLink;
+
 /** 单次 UART 实际发送尝试的环形诊断记录。 */
 typedef struct
 {
-    uint32_t call_no;           /**< 对应 board_link_tx() 调用序号。 */
-    uint32_t attempt_no;        /**< 通过参数及限频检查后的发送尝试序号。 */
-    uint32_t start_us;          /**< BSP_UART_Send() 调用前的时间戳，单位 us。 */
-    uint32_t interval_us;       /**< 与上一次实际发送尝试的间隔，单位 us。 */
-    uint32_t duration_us;       /**< BSP_UART_Send() 调用耗时，单位 us。 */
-    int32_t  result;            /**< BSP_UART_Send() 返回值。 */
-    uint32_t uart_error;        /**< 发送完成后的 HAL UART 错误码。 */
-    uint32_t dma_error;         /**< 发送完成后的 HAL DMA 错误码；无 DMA 时为 0。 */
-    uint16_t dma_ndtr_before;   /**< 发送前 DMA 剩余传输计数。 */
-    uint16_t dma_ndtr_after;    /**< 发送后 DMA 剩余传输计数。 */
-    uint8_t  seq;               /**< 本次帧序号。 */
-    uint8_t  length;            /**< payload 长度，单位 byte。 */
-    uint8_t  uart_state_before; /**< 发送前 HAL UART 状态。 */
-    uint8_t  uart_state_after;  /**< 发送后 HAL UART 状态。 */
-    uint8_t  dma_state_before;  /**< 发送前 HAL DMA 状态。 */
-    uint8_t  dma_state_after;   /**< 发送后 HAL DMA 状态。 */
+    uint32_t call_no;
+    uint32_t attempt_no;
+    uint32_t start_us;
+    uint32_t interval_us;
+    uint32_t duration_us;
+    int32_t  result;
+    uint32_t uart_error;
+    uint32_t dma_error;
+    uint16_t dma_ndtr_before;
+    uint16_t dma_ndtr_after;
+    uint8_t  seq;
+    uint8_t  length;
+    uint8_t  uart_state_before;
+    uint8_t  uart_state_after;
+    uint8_t  dma_state_before;
+    uint8_t  dma_state_after;
 } Board_Link_Tx_Trace_t;
 
-/** 板间 UART 初始化、限频和发送结果的累计诊断快照。 */
+/** 默认机械臂链路的发送累计诊断快照。 */
 typedef struct
 {
-    uint32_t init_state;         /**< 0=未调用，1=HAL 初始化失败，2=BSP 注册失败，3=就绪。 */
-    uint32_t call_count;         /**< board_link_tx() 总调用次数。 */
-    uint32_t invalid_call_count; /**< 参数或初始化状态无效的调用次数。 */
-    uint32_t rate_limited_count; /**< 被最小发送间隔拒绝的调用次数。 */
-    uint32_t attempt_count;      /**< 实际调用 BSP_UART_Send() 的次数。 */
-    uint32_t success_count;      /**< 完整写出一帧的次数。 */
-    uint32_t failure_count;      /**< 实际发送但未完整写出的次数。 */
-    uint32_t write_index;        /**< 下一条环形记录写入下标。 */
-    uint32_t record_count;       /**< 当前有效环形记录数量。 */
-    uint32_t last_attempt_us;    /**< 最近发送尝试的起始时间戳，单位 us。 */
-    uint32_t last_interval_us;   /**< 最近两次发送尝试间隔，单位 us。 */
-    uint32_t min_interval_us;    /**< 已观测最小发送尝试间隔，单位 us。 */
-    uint32_t max_interval_us;    /**< 已观测最大发送尝试间隔，单位 us。 */
-    uint32_t last_duration_us;   /**< 最近发送尝试耗时，单位 us。 */
-    uint32_t min_duration_us;    /**< 已观测最小发送尝试耗时，单位 us。 */
-    uint32_t max_duration_us;    /**< 已观测最大发送尝试耗时，单位 us。 */
-    int32_t  last_result;        /**< 最近一次 BSP_UART_Send() 返回值。 */
-    uint32_t last_uart_error;    /**< 最近一次尝试后的 HAL UART 错误码。 */
-    uint32_t last_dma_error;     /**< 最近一次尝试后的 HAL DMA 错误码。 */
-    uint8_t  last_seq;           /**< 最近实际发送帧的序号。 */
-    uint8_t  last_length;        /**< 最近实际发送 payload 长度，单位 byte。 */
-    uint8_t  dma_tx_configured;  /**< UART 配置了 TX DMA 时为 1。 */
-    uint8_t  reserved;           /**< 对齐保留字段。 */
+    uint32_t init_state; /**< 0=未初始化，1=HAL/配置失败，2=BSP 失败，3=就绪。 */
+    uint32_t call_count;
+    uint32_t invalid_call_count;
+    uint32_t rate_limited_count;
+    uint32_t attempt_count;
+    uint32_t success_count;
+    uint32_t failure_count;
+    uint32_t write_index;
+    uint32_t record_count;
+    uint32_t last_attempt_us;
+    uint32_t last_interval_us;
+    uint32_t min_interval_us;
+    uint32_t max_interval_us;
+    uint32_t last_duration_us;
+    uint32_t min_duration_us;
+    uint32_t max_duration_us;
+    int32_t  last_result;
+    uint32_t last_uart_error;
+    uint32_t last_dma_error;
+    uint8_t  last_seq;
+    uint8_t  last_length;
+    uint8_t  dma_tx_configured;
+    uint8_t  reserved;
 } Board_Link_Tx_Debug_t;
 
-/** Ozone 观察用的板间发送累计诊断。 */
 extern volatile Board_Link_Tx_Debug_t g_board_link_tx_debug;
-/** Ozone 观察用的最近 BOARD_LINK_TX_TRACE_COUNT 次实际发送记录。 */
 extern volatile Board_Link_Tx_Trace_t g_board_link_tx_trace[BOARD_LINK_TX_TRACE_COUNT];
-#endif
 
-/**
- * @brief 初始化板间 UART 及发送诊断状态。
- *
- * @param 无。
- *
- * @retval 无。
- *
- * @note 调用关系：由 robot_control_init() 在线程创建前调用；不主动发送帧。
- */
-void board_link_init(void);
+/** 注册一条 UART 链路；同一 UART 只能注册一次。 */
+BoardLink *BoardLink_Init(const BoardLink_Config_t *config);
 
-#if BOARD_LINK_TX_ENABLE
-/**
- * @brief 封装并发送一帧板间 payload。
- *
- * @param data 输入，payload 首地址；函数返回前已复制到模块发送缓冲区。
- * @param len  输入，payload 字节数，范围 1~BOARD_LINK_PAYLOAD_MAX。
- *
- * @return uint8_t 完整写出帧头、payload 和帧尾返回 1；参数无效、被限频或写失败返回 0。
- *
- * @note 调用关系：由 arm_link_tx_task() 在互斥锁外调用。
- * @note 安全说明：函数不解释 payload，不改变机械臂控制状态；失败详情写入诊断快照。
- */
-uint8_t board_link_tx(const void *data, uint8_t len);
-#endif
+/** 设置接收目标；仅当完整帧 payload 长度等于 len 时更新目标。 */
+void BoardLink_SetRxBuffer(BoardLink *link, void *buf, uint16_t len);
+
+/** 非阻塞读取 DMA 数据并解析；返回本次写入接收目标的完整帧数量。 */
+uint32_t BoardLink_Poll(BoardLink *link);
+
+/** 未收到首帧或离线时返回 STATE_OFFLINE，否则返回 STATE_ONLINE。 */
+uint8_t BoardLink_GetStatus(BoardLink *link);
+
+/** 返回最近一帧成功写入接收目标的序号。 */
+uint8_t BoardLink_GetSeq(BoardLink *link);
+
+/** 发送一帧；实际完整发送返回 1，参数无效、限频或发送失败返回 0。 */
+uint8_t BoardLink_Tx(BoardLink *link, const void *data, uint8_t len);
+
+void    BoardLinkParser_Reset(BoardLinkParser_t *parser);
+uint8_t BoardLinkParser_Feed(BoardLinkParser_t *parser, uint8_t byte, uint8_t *out_len);
+
+/* 现有 arm APP 默认链路兼容接口。 */
+void     board_link_init(void);
+uint8_t  board_link_tx(const void *data, uint8_t len);
+void     board_link_set_rx_buffer(void *buf, uint16_t len);
+uint32_t board_link_poll(void);
+uint8_t  board_link_get_status(void);
+uint8_t  board_link_get_seq(void);
 
 #endif /* _ARM_BOARD_LINK_H_ */

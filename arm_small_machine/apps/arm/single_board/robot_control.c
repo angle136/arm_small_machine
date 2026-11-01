@@ -292,8 +292,8 @@ static void arm_status_task(ULONG thread_input)
  *
  * @retval 无，线程创建后持续运行。
  *
- * @note 调用关系：由 robot_control_init() 创建；每 1 tick 依次刷新电机反馈、刷新 SBUS
- *       安全门，再执行重力补偿输出更新，最后发布 board_link 发送快照。
+ * @note 调用关系：由 robot_control_init() 创建；每 1 tick 依次刷新电机反馈和 SBUS，
+ *       非阻塞轮询板间回传，再执行重力补偿输出更新并发布 board_link 发送快照。
  * @note 安全说明：最终输出前由 arm_gravity_update() 同时检查 CH7 和全部关节反馈。
  */
 static void arm_control_task(ULONG thread_input)
@@ -304,6 +304,7 @@ static void arm_control_task(ULONG thread_input)
     {
         arm_motor_feedback_update();
         arm_remote_update();
+        board_link_poll();
         arm_gravity_update();
         arm_link_publish_feedback();
         tx_thread_sleep(1);

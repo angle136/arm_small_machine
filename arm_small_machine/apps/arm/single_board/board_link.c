@@ -3,6 +3,7 @@
 #include "bsp_def.h"
 #include "bsp_dwt.h"
 #include "bsp_uart.h"
+#include "module_offline.h"
 #include "usart.h"
 
 #include <string.h>
@@ -11,177 +12,423 @@
 #define LOG_LVL LOG_LVL_INFO
 #include "ulog_def.h"
 
-#define BOARD_LINK_HDR  0xAAU
-#define BOARD_LINK_TAIL 0xFFU
+typedef enum
+{
+    BOARD_LINK_SEND_INVALID = 0,
+    BOARD_LINK_SEND_RATE_LIMITED,
+    BOARD_LINK_SEND_SUCCESS,
+    BOARD_LINK_SEND_FAILURE,
+} BoardLink_Send_Result_t;
 
-static UART_Device *g_board_link_uart;
+struct BoardLink
+{
+    UART_HandleTypeDef *huart;
+    const char         *name;
+    UART_Device        *uart;
+    BoardLinkParser_t   parser;
+    uint8_t             chunk[BOARD_LINK_MAX_RX_BUF];
+    void               *rx_buffer;
+    uint16_t            rx_buffer_len;
+    Offline_Device     *offline_dev;
+    uint8_t             frame_seen;
+    uint8_t             last_seq;
+    uint8_t             rx_enable;
+    uint8_t             tx_enable;
+    uint8_t            *tx_buf;
+    uint8_t             tx_seq;
+    uint16_t            tx_interval_ms;
+    uint16_t            tx_timeout_ms;
+    uint32_t            last_tx_ms;
+    uint32_t            last_attempt_us;
+};
 
-#if BOARD_LINK_TX_ENABLE
-BUFFER_SECTION static uint8_t g_board_link_txbuf[3U + BOARD_LINK_PAYLOAD_MAX + 1U];
-static uint8_t                g_board_link_tx_seq;
-static uint32_t               g_board_link_last_tx_ms;
-static uint32_t               g_board_link_last_log_ms;
+static BoardLink s_links[BOARD_LINK_MAX_DEVICES];
+static uint8_t   s_link_used[BOARD_LINK_MAX_DEVICES];
+
+BUFFER_SECTION static uint8_t s_rxbuf[BOARD_LINK_MAX_DEVICES][BOARD_LINK_MAX_RX_BUF];
+BUFFER_SECTION static uint8_t s_txbuf[BOARD_LINK_MAX_DEVICES][3U + BOARD_LINK_MAX_PAYLOAD + 1U];
+
+static BoardLink *s_default_link;
+static uint32_t   s_last_init_state;
+static uint32_t   s_default_last_log_ms;
 
 volatile Board_Link_Tx_Debug_t g_board_link_tx_debug;
 volatile Board_Link_Tx_Trace_t g_board_link_tx_trace[BOARD_LINK_TX_TRACE_COUNT];
-#endif
 
-/**
- * @brief 初始化板间 UART 设备和发送诊断快照。
- * @param 无。
- * @retval 无。
- * @note 仅建立传输资源，不主动发送数据；失败原因保存在 g_board_link_tx_debug.init_state。
- */
-void board_link_init(void)
+void BoardLinkParser_Reset(BoardLinkParser_t *parser)
 {
-#if BOARD_LINK_TX_ENABLE
-    memset((void *)&g_board_link_tx_debug, 0, sizeof(g_board_link_tx_debug));
-    memset((void *)g_board_link_tx_trace, 0, sizeof(g_board_link_tx_trace));
-#endif
-
-    BOARD_LINK_UART.Init.BaudRate = BOARD_LINK_BAUD;
-    if (HAL_UART_Init(&BOARD_LINK_UART) != HAL_OK)
-    {
-#if BOARD_LINK_TX_ENABLE
-        g_board_link_tx_debug.init_state = 1U;
-#endif
-        LOG_E("uart init failed: baud=%lu", (unsigned long)BOARD_LINK_BAUD);
-        return;
-    }
-
-    UART_Device_init_config config = {
-        .huart           = &BOARD_LINK_UART,
-        .expected_rx_len = 0U,
-        .rx_buf          = NULL,
-        .rx_buf_size     = 0U,
-        .rx_mode         = UART_MODE_BLOCKING,
-        .tx_mode         = BOARD_LINK_UART.hdmatx ? UART_MODE_DMA : UART_MODE_BLOCKING,
-    };
-    g_board_link_uart = BSP_UART_Device_Init(&config);
-    if (g_board_link_uart == NULL)
-    {
-#if BOARD_LINK_TX_ENABLE
-        g_board_link_tx_debug.init_state = 2U;
-#endif
-        LOG_E("bsp uart device init failed");
-        return;
-    }
-
-#if BOARD_LINK_TX_ENABLE
-    g_board_link_tx_debug.dma_tx_configured = BOARD_LINK_UART.hdmatx != NULL;
-    g_board_link_tx_debug.init_state        = 3U;
-#endif
-
-    LOG_I("board link ready: instance=%p baud=%lu tx=%u rx=%u interval=%lu ms dma_tx=%u dma_rx=%u", (void *)BOARD_LINK_UART.Instance,
-          (unsigned long)BOARD_LINK_BAUD, (unsigned)BOARD_LINK_TX_ENABLE, (unsigned)BOARD_LINK_RX_ENABLE, (unsigned long)BOARD_LINK_TX_INTERVAL_MS,
-          BOARD_LINK_UART.hdmatx != NULL, BOARD_LINK_UART.hdmarx != NULL);
+    if (parser == NULL) return;
+    memset(parser, 0, sizeof(*parser));
 }
 
-#if BOARD_LINK_TX_ENABLE
-/**
- * @brief 按板间协议封帧并执行一次受限频保护的 UART 发送。
- * @param data 输入，待复制的 payload 首地址。
- * @param len 输入，payload 字节数，范围 1~BOARD_LINK_PAYLOAD_MAX。
- * @return uint8_t 整帧完整写出返回 1；参数无效、限频或 UART 写失败返回 0。
- * @note 发送诊断与环形 trace 在本函数内同步更新，调用者可据返回值决定是否重试。
- */
+uint8_t BoardLinkParser_Feed(BoardLinkParser_t *parser, uint8_t byte, uint8_t *out_len)
+{
+    if (parser == NULL) return 0U;
+
+    switch (parser->state)
+    {
+    case 0U:
+        if (byte == BOARD_LINK_HDR) parser->state = 1U;
+        break;
+
+    case 1U:
+        if (byte == 0U || byte > BOARD_LINK_MAX_PAYLOAD)
+        {
+            parser->state = (byte == BOARD_LINK_HDR) ? 1U : 0U;
+        }
+        else
+        {
+            parser->length = byte;
+            parser->index  = 0U;
+            parser->state  = 2U;
+        }
+        break;
+
+    case 2U:
+        parser->seq   = byte;
+        parser->state = 3U;
+        break;
+
+    case 3U:
+        parser->data[parser->index++] = byte;
+        if (parser->index >= parser->length) parser->state = 4U;
+        break;
+
+    case 4U:
+        parser->state = (byte == BOARD_LINK_HDR) ? 1U : 0U;
+        if (byte == BOARD_LINK_TAIL)
+        {
+            if (out_len != NULL) *out_len = parser->length;
+            return 1U;
+        }
+        break;
+
+    default:
+        BoardLinkParser_Reset(parser);
+        break;
+    }
+
+    return 0U;
+}
+
+BoardLink *BoardLink_Init(const BoardLink_Config_t *config)
+{
+    s_last_init_state = 1U;
+    if (config == NULL || config->huart == NULL)
+    {
+        LOG_E("invalid config");
+        return NULL;
+    }
+
+    UART_HandleTypeDef *huart = (UART_HandleTypeDef *)config->huart;
+    for (uint32_t i = 0U; i < BOARD_LINK_MAX_DEVICES; ++i)
+    {
+        if (s_link_used[i] != 0U && s_links[i].huart == huart)
+        {
+            LOG_E("uart already registered by [%s]", s_links[i].name != NULL ? s_links[i].name : "board_link");
+            return NULL;
+        }
+    }
+
+    uint32_t slot = BOARD_LINK_MAX_DEVICES;
+    for (uint32_t i = 0U; i < BOARD_LINK_MAX_DEVICES; ++i)
+    {
+        if (s_link_used[i] == 0U)
+        {
+            slot = i;
+            break;
+        }
+    }
+    if (slot == BOARD_LINK_MAX_DEVICES)
+    {
+        LOG_E("no free device slot");
+        return NULL;
+    }
+
+    BoardLink *link = &s_links[slot];
+    memset(link, 0, sizeof(*link));
+    link->huart = huart;
+    link->name  = config->name;
+
+    huart->Init.BaudRate = config->baud;
+    if (HAL_UART_Init(huart) != HAL_OK)
+    {
+        LOG_E("uart init failed for [%s]", config->name != NULL ? config->name : "board_link");
+        return NULL;
+    }
+
+    link->rx_enable      = config->rx_enable;
+    link->tx_enable      = config->tx_enable;
+    link->tx_buf         = s_txbuf[slot];
+    link->tx_interval_ms = config->tx_interval_ms;
+    link->tx_timeout_ms  = config->tx_timeout_ms;
+
+    if (link->rx_enable != 0U && huart->hdmarx == NULL)
+    {
+        LOG_E("UART RX DMA not configured for [%s]", config->name != NULL ? config->name : "board_link");
+        return NULL;
+    }
+
+    uint16_t rx_size = config->rx_buf_size;
+    if (rx_size == 0U || rx_size > BOARD_LINK_MAX_RX_BUF) rx_size = BOARD_LINK_MAX_RX_BUF;
+    if (link->rx_enable != 0U && (rx_size < 2U || (rx_size & (rx_size - 1U)) != 0U))
+    {
+        LOG_E("RX buffer size must be a power of 2 for [%s]", config->name != NULL ? config->name : "board_link");
+        return NULL;
+    }
+
+    UART_Device_init_config uart_config = {
+        .huart           = huart,
+        .rx_buf          = (link->rx_enable != 0U) ? s_rxbuf[slot] : NULL,
+        .rx_buf_size     = (link->rx_enable != 0U) ? rx_size : 0U,
+        .expected_rx_len = 0U,
+        .rx_mode         = (link->rx_enable != 0U) ? UART_MODE_DMA : UART_MODE_BLOCKING,
+        .tx_mode         = (huart->hdmatx != NULL) ? UART_MODE_DMA : UART_MODE_BLOCKING,
+    };
+    link->uart = BSP_UART_Device_Init(&uart_config);
+    if (link->uart == NULL)
+    {
+        s_last_init_state = 2U;
+        LOG_E("bsp uart device init failed for [%s]", config->name != NULL ? config->name : "board_link");
+        return NULL;
+    }
+
+    if (link->rx_enable != 0U && config->offline_enable != 0U)
+    {
+        const Offline_Init_config_t offline_config = {
+            .name       = (config->name != NULL) ? config->name : "board_link",
+            .timeout_ms = config->offline_timeout_ms,
+            .beep_times = config->offline_beep_times,
+            .enable     = 1U,
+        };
+        link->offline_dev = Module_Offline_register(&offline_config);
+        if (link->offline_dev == NULL)
+        {
+            LOG_E("offline register failed for [%s]", config->name != NULL ? config->name : "board_link");
+        }
+    }
+
+    BoardLinkParser_Reset(&link->parser);
+    s_link_used[slot] = 1U;
+    s_last_init_state = 3U;
+
+    LOG_I("link [%s] ready: %lu baud, tx=%u rx=%u dma_tx=%u dma_rx=%u", config->name != NULL ? config->name : "board_link",
+          (unsigned long)config->baud, (unsigned)link->tx_enable, (unsigned)link->rx_enable, huart->hdmatx != NULL, huart->hdmarx != NULL);
+    return link;
+}
+
+void BoardLink_SetRxBuffer(BoardLink *link, void *buf, uint16_t len)
+{
+    if (link == NULL) return;
+    if (buf == NULL || len == 0U || len > BOARD_LINK_MAX_PAYLOAD)
+    {
+        link->rx_buffer     = NULL;
+        link->rx_buffer_len = 0U;
+        return;
+    }
+
+    link->rx_buffer     = buf;
+    link->rx_buffer_len = len;
+}
+
+uint32_t BoardLink_Poll(BoardLink *link)
+{
+    if (link == NULL || link->uart == NULL || link->rx_enable == 0U) return 0U;
+
+    uint32_t accepted_frames = 0U;
+    uint32_t chunk_len       = 0U;
+    while (BSP_UART_Read(link->uart, link->chunk, sizeof(link->chunk), &chunk_len, 0U) > 0)
+    {
+        for (uint32_t i = 0U; i < chunk_len; ++i)
+        {
+            uint8_t frame_len = 0U;
+            if (BoardLinkParser_Feed(&link->parser, link->chunk[i], &frame_len) == 0U) continue;
+            if (link->rx_buffer == NULL || frame_len != link->rx_buffer_len) continue;
+
+            memcpy(link->rx_buffer, link->parser.data, frame_len);
+            link->last_seq   = link->parser.seq;
+            link->frame_seen = 1U;
+            if (link->offline_dev != NULL) Module_Offline_device_update(link->offline_dev);
+            accepted_frames++;
+        }
+    }
+
+    return accepted_frames;
+}
+
+uint8_t BoardLink_GetStatus(BoardLink *link)
+{
+    if (link == NULL || link->frame_seen == 0U) return STATE_OFFLINE;
+    if (link->offline_dev == NULL) return STATE_ONLINE;
+    return Module_Offline_get_device_status(link->offline_dev);
+}
+
+uint8_t BoardLink_GetSeq(BoardLink *link) { return (link != NULL) ? link->last_seq : 0U; }
+
+static BoardLink_Send_Result_t board_link_send(BoardLink *link, const void *data, uint8_t len, volatile Board_Link_Tx_Trace_t *trace)
+{
+    if (link == NULL || link->uart == NULL || link->tx_enable == 0U || data == NULL || len == 0U || len > BOARD_LINK_MAX_PAYLOAD)
+    {
+        return BOARD_LINK_SEND_INVALID;
+    }
+
+    const uint32_t now_ms = (uint32_t)BSP_DWT_GetTimeline_ms();
+    if ((uint32_t)(now_ms - link->last_tx_ms) < link->tx_interval_ms) return BOARD_LINK_SEND_RATE_LIMITED;
+    link->last_tx_ms = now_ms;
+
+    const uint8_t seq = link->tx_seq++;
+    link->tx_buf[0]   = BOARD_LINK_HDR;
+    link->tx_buf[1]   = len;
+    link->tx_buf[2]   = seq;
+    memcpy(&link->tx_buf[3], data, len);
+    link->tx_buf[3U + len] = BOARD_LINK_TAIL;
+
+    const uint32_t start_us    = (uint32_t)BSP_DWT_GetTimeline_us();
+    const uint32_t interval_us = (link->last_attempt_us == 0U) ? 0U : (uint32_t)(start_us - link->last_attempt_us);
+    link->last_attempt_us      = start_us;
+
+    if (trace != NULL)
+    {
+        memset((void *)trace, 0, sizeof(*trace));
+        trace->start_us          = start_us;
+        trace->interval_us       = interval_us;
+        trace->seq               = seq;
+        trace->length            = len;
+        trace->uart_state_before = (uint8_t)link->huart->gState;
+        trace->dma_state_before  = (link->huart->hdmatx != NULL) ? (uint8_t)link->huart->hdmatx->State : 0U;
+        trace->dma_ndtr_before   = (link->huart->hdmatx != NULL) ? (uint16_t)__HAL_DMA_GET_COUNTER(link->huart->hdmatx) : 0U;
+    }
+
+    const int      result      = BSP_UART_Send(link->uart, link->tx_buf, 4U + len, link->tx_timeout_ms);
+    const uint32_t end_us      = (uint32_t)BSP_DWT_GetTimeline_us();
+    const uint32_t duration_us = (uint32_t)(end_us - start_us);
+
+    if (trace != NULL)
+    {
+        trace->duration_us      = duration_us;
+        trace->result           = result;
+        trace->uart_error       = link->huart->ErrorCode;
+        trace->dma_error        = (link->huart->hdmatx != NULL) ? link->huart->hdmatx->ErrorCode : 0U;
+        trace->uart_state_after = (uint8_t)link->huart->gState;
+        trace->dma_state_after  = (link->huart->hdmatx != NULL) ? (uint8_t)link->huart->hdmatx->State : 0U;
+        trace->dma_ndtr_after   = (link->huart->hdmatx != NULL) ? (uint16_t)__HAL_DMA_GET_COUNTER(link->huart->hdmatx) : 0U;
+    }
+
+    return (result == (int)(4U + len)) ? BOARD_LINK_SEND_SUCCESS : BOARD_LINK_SEND_FAILURE;
+}
+
+uint8_t BoardLink_Tx(BoardLink *link, const void *data, uint8_t len)
+{
+    return (board_link_send(link, data, len, NULL) == BOARD_LINK_SEND_SUCCESS) ? 1U : 0U;
+}
+
+void board_link_init(void)
+{
+    memset((void *)&g_board_link_tx_debug, 0, sizeof(g_board_link_tx_debug));
+    memset((void *)g_board_link_tx_trace, 0, sizeof(g_board_link_tx_trace));
+
+    const BoardLink_Config_t config = {
+        .huart              = &BOARD_LINK_UART,
+        .baud               = BOARD_LINK_BAUD,
+        .rx_enable          = BOARD_LINK_RX_ENABLE,
+        .tx_enable          = BOARD_LINK_TX_ENABLE,
+        .tx_interval_ms     = BOARD_LINK_TX_INTERVAL_MS,
+        .tx_timeout_ms      = BOARD_LINK_TX_TIMEOUT_MS,
+        .rx_buf_size        = BOARD_LINK_RX_BUF_SIZE,
+        .name               = "arm_board_link",
+        .offline_timeout_ms = BOARD_LINK_OFFLINE_TIMEOUT_MS,
+        .offline_enable     = BOARD_LINK_OFFLINE_ENABLE,
+        .offline_beep_times = BOARD_LINK_OFFLINE_BEEP_TIMES,
+    };
+
+    s_default_link                   = BoardLink_Init(&config);
+    g_board_link_tx_debug.init_state = s_last_init_state;
+    if (s_default_link != NULL)
+    {
+        g_board_link_tx_debug.dma_tx_configured = s_default_link->huart->hdmatx != NULL;
+    }
+}
+
 uint8_t board_link_tx(const void *data, uint8_t len)
 {
-    const uint8_t *payload = (const uint8_t *)data;
-    const uint32_t now_ms  = (uint32_t)BSP_DWT_GetTimeline_ms();
-
     g_board_link_tx_debug.call_count++;
-    if (g_board_link_uart == NULL || payload == NULL || len == 0U || len > BOARD_LINK_PAYLOAD_MAX)
+    if (s_default_link == NULL || data == NULL || len == 0U || len > BOARD_LINK_PAYLOAD_MAX)
     {
         g_board_link_tx_debug.invalid_call_count++;
         return 0U;
     }
-    if ((uint32_t)(now_ms - g_board_link_last_tx_ms) < BOARD_LINK_TX_INTERVAL_MS)
+
+    const uint32_t                  trace_index = g_board_link_tx_debug.write_index;
+    volatile Board_Link_Tx_Trace_t *trace       = &g_board_link_tx_trace[trace_index];
+
+    const BoardLink_Send_Result_t send_result = board_link_send(s_default_link, data, len, trace);
+    if (send_result == BOARD_LINK_SEND_INVALID)
+    {
+        g_board_link_tx_debug.invalid_call_count++;
+        return 0U;
+    }
+    if (send_result == BOARD_LINK_SEND_RATE_LIMITED)
     {
         g_board_link_tx_debug.rate_limited_count++;
         return 0U;
     }
-    g_board_link_last_tx_ms = now_ms;
 
-    g_board_link_txbuf[0] = BOARD_LINK_HDR;
-    g_board_link_txbuf[1] = len;
-    const uint8_t seq     = g_board_link_tx_seq++;
-    g_board_link_txbuf[2] = seq;
-    memcpy(&g_board_link_txbuf[3], payload, len);
-    g_board_link_txbuf[3U + len] = BOARD_LINK_TAIL;
+    const uint32_t attempt_no = g_board_link_tx_debug.attempt_count + 1U;
+    trace->call_no            = g_board_link_tx_debug.call_count;
+    trace->attempt_no         = attempt_no;
 
-    const uint32_t start_us    = (uint32_t)BSP_DWT_GetTimeline_us();
-    const uint32_t interval_us = (g_board_link_tx_debug.attempt_count == 0U) ? 0U : (uint32_t)(start_us - g_board_link_tx_debug.last_attempt_us);
-    const uint32_t trace_index = g_board_link_tx_debug.write_index;
-    volatile Board_Link_Tx_Trace_t *trace = &g_board_link_tx_trace[trace_index];
-
-    trace->attempt_no        = 0U;
-    trace->call_no           = g_board_link_tx_debug.call_count;
-    trace->start_us          = start_us;
-    trace->interval_us       = interval_us;
-    trace->seq               = seq;
-    trace->length            = len;
-    trace->uart_state_before = (uint8_t)BOARD_LINK_UART.gState;
-    trace->dma_state_before  = (BOARD_LINK_UART.hdmatx != NULL) ? (uint8_t)BOARD_LINK_UART.hdmatx->State : 0U;
-    trace->dma_ndtr_before   = (BOARD_LINK_UART.hdmatx != NULL) ? (uint16_t)__HAL_DMA_GET_COUNTER(BOARD_LINK_UART.hdmatx) : 0U;
-
-    const int      result      = BSP_UART_Send(g_board_link_uart, g_board_link_txbuf, 4U + len, BOARD_LINK_TX_TIMEOUT_MS);
-    const uint32_t end_us      = (uint32_t)BSP_DWT_GetTimeline_us();
-    const uint32_t duration_us = (uint32_t)(end_us - start_us);
-    const uint32_t attempt_no  = g_board_link_tx_debug.attempt_count + 1U;
-
-    trace->duration_us      = duration_us;
-    trace->result           = result;
-    trace->uart_error       = BOARD_LINK_UART.ErrorCode;
-    trace->dma_error        = (BOARD_LINK_UART.hdmatx != NULL) ? BOARD_LINK_UART.hdmatx->ErrorCode : 0U;
-    trace->uart_state_after = (uint8_t)BOARD_LINK_UART.gState;
-    trace->dma_state_after  = (BOARD_LINK_UART.hdmatx != NULL) ? (uint8_t)BOARD_LINK_UART.hdmatx->State : 0U;
-    trace->dma_ndtr_after   = (BOARD_LINK_UART.hdmatx != NULL) ? (uint16_t)__HAL_DMA_GET_COUNTER(BOARD_LINK_UART.hdmatx) : 0U;
-    trace->attempt_no       = attempt_no;
-
-    g_board_link_tx_debug.attempt_count = attempt_no;
-    g_board_link_tx_debug.write_index   = (trace_index + 1U) % BOARD_LINK_TX_TRACE_COUNT;
-    if (g_board_link_tx_debug.record_count < BOARD_LINK_TX_TRACE_COUNT) g_board_link_tx_debug.record_count++;
-    g_board_link_tx_debug.last_attempt_us  = start_us;
-    g_board_link_tx_debug.last_interval_us = interval_us;
-    g_board_link_tx_debug.last_duration_us = duration_us;
-    g_board_link_tx_debug.last_result      = result;
+    g_board_link_tx_debug.attempt_count    = attempt_no;
+    g_board_link_tx_debug.write_index      = (trace_index + 1U) % BOARD_LINK_TX_TRACE_COUNT;
+    g_board_link_tx_debug.last_attempt_us  = trace->start_us;
+    g_board_link_tx_debug.last_interval_us = trace->interval_us;
+    g_board_link_tx_debug.last_duration_us = trace->duration_us;
+    g_board_link_tx_debug.last_result      = trace->result;
     g_board_link_tx_debug.last_uart_error  = trace->uart_error;
     g_board_link_tx_debug.last_dma_error   = trace->dma_error;
-    g_board_link_tx_debug.last_seq         = seq;
-    g_board_link_tx_debug.last_length      = len;
+    g_board_link_tx_debug.last_seq         = trace->seq;
+    g_board_link_tx_debug.last_length      = trace->length;
+    if (g_board_link_tx_debug.record_count < BOARD_LINK_TX_TRACE_COUNT) g_board_link_tx_debug.record_count++;
 
     if (attempt_no == 1U)
     {
-        g_board_link_tx_debug.min_duration_us = duration_us;
-        g_board_link_tx_debug.max_duration_us = duration_us;
+        g_board_link_tx_debug.min_duration_us = trace->duration_us;
+        g_board_link_tx_debug.max_duration_us = trace->duration_us;
     }
     else
     {
-        if (interval_us < g_board_link_tx_debug.min_interval_us || g_board_link_tx_debug.min_interval_us == 0U)
-            g_board_link_tx_debug.min_interval_us = interval_us;
-        if (interval_us > g_board_link_tx_debug.max_interval_us) g_board_link_tx_debug.max_interval_us = interval_us;
-        if (duration_us < g_board_link_tx_debug.min_duration_us) g_board_link_tx_debug.min_duration_us = duration_us;
-        if (duration_us > g_board_link_tx_debug.max_duration_us) g_board_link_tx_debug.max_duration_us = duration_us;
+        if (trace->interval_us < g_board_link_tx_debug.min_interval_us || g_board_link_tx_debug.min_interval_us == 0U)
+            g_board_link_tx_debug.min_interval_us = trace->interval_us;
+        if (trace->interval_us > g_board_link_tx_debug.max_interval_us) g_board_link_tx_debug.max_interval_us = trace->interval_us;
+        if (trace->duration_us < g_board_link_tx_debug.min_duration_us) g_board_link_tx_debug.min_duration_us = trace->duration_us;
+        if (trace->duration_us > g_board_link_tx_debug.max_duration_us) g_board_link_tx_debug.max_duration_us = trace->duration_us;
     }
 
-    if (result == (int)(4U + len))
+    if (send_result == BOARD_LINK_SEND_SUCCESS)
         g_board_link_tx_debug.success_count++;
     else
         g_board_link_tx_debug.failure_count++;
 
-    if ((uint32_t)(now_ms - g_board_link_last_log_ms) >= 1000U)
+    const uint32_t now_ms = (uint32_t)BSP_DWT_GetTimeline_ms();
+    if ((uint32_t)(now_ms - s_default_last_log_ms) >= 1000U)
     {
-        g_board_link_last_log_ms = now_ms;
-        LOG_I("tx stats: call=%lu limited=%lu attempt=%lu ok=%lu fail=%lu dt_us=%lu/%lu/%lu dur_us=%lu/%lu result=%d seq=%u err=0x%08lX",
+        s_default_last_log_ms = now_ms;
+        LOG_I("tx stats: call=%lu limited=%lu attempt=%lu ok=%lu fail=%lu dt_us=%lu/%lu/%lu dur_us=%lu/%lu result=%ld seq=%u err=0x%08lX",
               (unsigned long)g_board_link_tx_debug.call_count, (unsigned long)g_board_link_tx_debug.rate_limited_count,
               (unsigned long)g_board_link_tx_debug.attempt_count, (unsigned long)g_board_link_tx_debug.success_count,
               (unsigned long)g_board_link_tx_debug.failure_count, (unsigned long)g_board_link_tx_debug.last_interval_us,
               (unsigned long)g_board_link_tx_debug.min_interval_us, (unsigned long)g_board_link_tx_debug.max_interval_us,
-              (unsigned long)g_board_link_tx_debug.last_duration_us, (unsigned long)g_board_link_tx_debug.max_duration_us, result, (unsigned)seq,
-              (unsigned long)BOARD_LINK_UART.ErrorCode);
+              (unsigned long)g_board_link_tx_debug.last_duration_us, (unsigned long)g_board_link_tx_debug.max_duration_us,
+              (long)g_board_link_tx_debug.last_result, (unsigned)g_board_link_tx_debug.last_seq,
+              (unsigned long)g_board_link_tx_debug.last_uart_error);
     }
 
-    return (result == (int)(4U + len)) ? 1U : 0U;
+    return (send_result == BOARD_LINK_SEND_SUCCESS) ? 1U : 0U;
 }
-#endif
+
+void board_link_set_rx_buffer(void *buf, uint16_t len) { BoardLink_SetRxBuffer(s_default_link, buf, len); }
+
+uint32_t board_link_poll(void) { return BoardLink_Poll(s_default_link); }
+
+uint8_t board_link_get_status(void) { return BoardLink_GetStatus(s_default_link); }
+
+uint8_t board_link_get_seq(void) { return BoardLink_GetSeq(s_default_link); }
