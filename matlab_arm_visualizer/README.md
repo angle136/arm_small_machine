@@ -1,4 +1,4 @@
-# MATLAB 7轴机械臂串口实时可视化
+# MATLAB 7轴机械臂串口 / J-Link RTT 实时可视化
 
 该目录是总仓库内独立、可迁移的 MATLAB 工具，不修改同级 `arm_small_machine`
 嵌入式工程。代码、URDF 和完整 STL 网格都在同一个仓库中，不依赖原电脑的用户名、桌面路径
@@ -21,13 +21,20 @@ Toolbox，然后克隆整个仓库。在 MATLAB“当前文件夹”中进入仓
 
 ## 数据协议
 
-当前工程不是 `#角度,...\r\n` 文本协议。`arm` 串口帧为 40 字节：
+当前工程不是 `#角度,...\r\n` 文本协议。`arm` 串口和 IMU 工程 RTT Channel 1
+均使用 40 字节帧：
 
 ```text
 0xAA | LEN=36 | SEQ | J1...J7, TOOL（8个little-endian float32）| STATUS（uint32）| 0xFF
 ```
 
 `STATUS` 使用位掩码：`bit0=保持当前姿态`，`bit1=完全跟随`，两位互斥。
+MATLAB 会解析并保留该字段，但状态不参与关节映射或模型显示。解析器也兼容旧固件
+不带 `STATUS` 的 36 字节帧：
+
+```text
+0xAA | LEN=32 | SEQ | J1...J7, TOOL（8个little-endian float32）| 0xFF
+```
 
 - 波特率：115200，8N1（当前 `apps/arm/robot.cmake` 的 `BOARD_LINK_BAUD`）。
 - `arm` 串口约每 10 ms 发送一帧。
@@ -92,7 +99,32 @@ session.stop();
 - 双击 `start_arm_serial.bat`：自动启动 MATLAB。串口优先选择 COM15；若 COM15
   不可用，则选择系统报告的第一个可用端口。对应 MATLAB 脚本是
   `run_arm_serial_visualizer.m`。
-串口入口使用 `parse_board_link_bytes.m`、关节映射和 3D 显示。
+- 双击 `start_arm_jlink.bat`：自动释放 Ozone、Cortex-Debug 使用的 J-Link GDB
+  Server、OpenOCD 和旧 RTT Logger，然后通过 J-Link RTT Channel 1 启动同一套显示。
+  对应 MATLAB 脚本是 `run_arm_jlink_visualizer.m`。
+
+两个入口只在字节来源上不同，后续均使用 `parse_board_link_bytes.m`、同一组关节
+取反、URDF 零位映射、刷新按钮和 3D 显示。J-Link 入口使用 MATLAB 原生
+`fopen/fseek/fread` 读取 Logger 文件，不使用曾在 MATLAB R2026a 中触发访问冲突的
+`.NET FileStream.Read`。关闭图窗或调用 `armSession.stop()` 会结束本次 Logger、释放
+J-Link 并删除临时文件。
+
+J-Link 入口只读取 RTT，不会复位、暂停或烧写芯片。默认配置为：
+
+```text
+Device: STM32F407IG
+Interface: SWD
+Speed: 4000 kHz
+RTT Channel: 1 (ArmIk 二进制关节帧)
+```
+
+如需手动启动 J-Link 模式：
+
+```matlab
+armSession = arm_jlink_visualizer;
+armSession.status()
+armSession.stop()
+```
 
 实时窗口右侧提供“刷新姿态 (R)”按钮，也可以直接按 `R`。正常收帧时，刷新会解除
 可能残留的相机拖动锁，并使用最近一帧关节角强制重绘模型。

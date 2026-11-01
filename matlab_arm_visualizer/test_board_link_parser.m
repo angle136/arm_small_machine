@@ -43,6 +43,18 @@ assert(isempty(remain2), '完整帧解析后不应残留字节。');
 assert(stats2.acceptedFrames == 1, '有效帧计数错误。');
 assert(status2 == expectedStatus, 'uint32 状态位解析错误。');
 
+% 旧固件没有 STATUS，仍应兼容，状态按 0 返回。
+legacyFrame = [uint8(hex2dec('AA')), uint8(32), uint8(8), ...
+    typecast(expectedValues, 'uint8'), uint8(hex2dec('FF'))];
+[legacySamples, legacySequence, legacyRaw, legacyRemain, legacyStats, legacyStatus] = ...
+    parse_board_link_bytes(uint8([]), legacyFrame);
+assert(size(legacySamples, 1) == 1 && legacySequence == uint8(8), ...
+       '旧 36 字节帧未被兼容解析。');
+assert(numel(legacyRaw{1}) == 36 && isempty(legacyRemain), ...
+       '旧协议帧长度或缓存处理错误。');
+assert(legacyStats.acceptedFrames == 1 && legacyStatus == uint32(0), ...
+       '旧协议无 STATUS 时应返回 0。');
+
 % -------------------------------------------------------------------------
 % 测试 2：乱码、错误长度、错误帧尾之后仍能重新同步到有效帧。
 % -------------------------------------------------------------------------
@@ -60,5 +72,5 @@ assert(isempty(remain3), '测试数据解析后不应残留字节。');
 assert(stats3.invalidLength >= 1, '未检测到错误长度。');
 assert(stats3.invalidTail >= 1, '未检测到错误帧尾。');
 
-fprintf('[PASS] board_link 解析器测试通过：状态位、残帧、乱码和错误恢复均已覆盖。\n');
+fprintf('[PASS] board_link 解析器测试通过：新旧帧、状态位、残帧、乱码和错误恢复均已覆盖。\n');
 end

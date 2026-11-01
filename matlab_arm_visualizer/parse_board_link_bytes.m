@@ -1,8 +1,10 @@
 function [samples, sequences, rawFrames, remainingBuffer, stats, statuses] = parse_board_link_bytes(oldBuffer, newBytes)
 %PARSE_BOARD_LINK_BYTES 解析机械臂下位机的 board_link 二进制数据流。
 %
-% arm 固件协议（总长度 40 字节）：
+% 新协议（总长度 40 字节）：
 %   0xAA | LEN=36 | SEQ | 8 个 little-endian float32 | uint32 状态位 | 0xFF
+% 旧协议（总长度 36 字节）：
+%   0xAA | LEN=32 | SEQ | 8 个 little-endian float32 | 0xFF
 %
 % 8 个 float32 中，前 7 个依次映射 J1~J7，单位已经是 rad，第 8 个是工具量。
 % uint32 状态位中 bit0=保持当前姿态，bit1=完全跟随。
@@ -22,7 +24,8 @@ function [samples, sequences, rawFrames, remainingBuffer, stats, statuses] = par
 
 FRAME_HEADER = uint8(hex2dec('AA'));
 FRAME_TAIL = uint8(hex2dec('FF'));
-EXPECTED_PAYLOAD_LENGTH = 36;
+LEGACY_PAYLOAD_LENGTH = 32;
+STATUS_PAYLOAD_LENGTH = 36;
 FLOAT_PAYLOAD_LENGTH = 32;
 VALUE_COUNT = 8;
 
@@ -61,7 +64,8 @@ while true
     end
 
     payloadLength = double(remainingBuffer(2));
-    if payloadLength ~= EXPECTED_PAYLOAD_LENGTH
+    if payloadLength ~= LEGACY_PAYLOAD_LENGTH && ...
+            payloadLength ~= STATUS_PAYLOAD_LENGTH
         % 长度字段不正确时仅丢弃当前 0xAA，随后继续寻找下一个帧头。
         stats.invalidLength = stats.invalidLength + 1;
         stats.discardedBytes = stats.discardedBytes + 1;
@@ -85,7 +89,10 @@ while true
     rawFrame = remainingBuffer(1:frameLength);
     floatPayload = rawFrame(4:3 + FLOAT_PAYLOAD_LENGTH);
     values = typecast(floatPayload, 'single');
-    status = typecast(rawFrame(4 + FLOAT_PAYLOAD_LENGTH:3 + payloadLength), 'uint32');
+    status = uint32(0);
+    if payloadLength == STATUS_PAYLOAD_LENGTH
+        status = typecast(rawFrame(4 + FLOAT_PAYLOAD_LENGTH:3 + payloadLength), 'uint32');
+    end
 
     % STM32 和常见 Windows PC 都是小端。保留大端主机兼容处理，避免隐式假设。
     [~, ~, endian] = computer;
