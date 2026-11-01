@@ -29,6 +29,8 @@ function session = arm_serial_visualizer(portName, varargin)
 %   DefaultView        - 启动时的编号视图，1~10，默认 5（Y向上、Z向右）。
 %   InversionFlags     - J1~J7 输入方向开关；0 保持，1 取反。
 %                        默认 [1 1 1 1 1 0 0]。
+%   ByteSource         - 内部字节源适配器；留空时使用串口。J-Link 入口用它
+%                        复用本文件的解析、映射、刷新和资源清理逻辑。
 
 % -------------------------------------------------------------------------
 % 1. 参数检查
@@ -62,6 +64,10 @@ addParameter(parser, 'DefaultView', 5, ...
          x >= 1 && x <= 10 && fix(x) == x);
 addParameter(parser, 'InversionFlags', [1 1 1 1 1 0 0], ...
     @(x) (isnumeric(x) || islogical(x)) && isvector(x) && numel(x) == 7);
+addParameter(parser, 'ByteSource', [], ...
+    @(x) isempty(x) || (isstruct(x) && isfield(x, 'readAvailable') && ...
+        isa(x.readAvailable, 'function_handle') && isfield(x, 'close') && ...
+        isa(x.close, 'function_handle')));
 parse(parser, portName, varargin{:});
 
 portName = char(string(parser.Results.portName));
@@ -76,6 +82,8 @@ liveVisuals = parser.Results.LiveVisuals;
 urdfPath = string(parser.Results.UrdfPath);
 defaultView = double(parser.Results.DefaultView);
 inversionFlags = validateInversionFlags(parser.Results.InversionFlags);
+byteSource = parser.Results.ByteSource;
+usesExternalByteSource = ~isempty(byteSource);
 
 % 这些变量由嵌套回调共享，避免 global 和阻塞式 while 循环。
 serialDevice = [];
@@ -93,6 +101,7 @@ validFrameCount = 0;
 droppedFrameCount = 0;
 invalidFrameCount = 0;
 callbackErrorCount = 0;
+sourceFailureMessage = '';
 totalByteCount = 0;
 readChunkCount = 0;
 isStopping = false;
@@ -113,12 +122,14 @@ workspaceRadius = [];
 % 2. 打开串口、创建模型和 timer
 % -------------------------------------------------------------------------
 try
-    serialDevice = serialport(portName, baudRate, ...
-        'DataBits', 8, ...
-        'StopBits', 1, ...
-        'Parity', 'none', ...
-        'Timeout', 0.05);
-    flush(serialDevice);
+    if ~usesExternalByteSource
+        serialDevice = serialport(portName, baudRate, ...
+            'DataBits', 8, ...
+            'StopBits', 1, ...
+            'Parity', 'none', ...
+            'Timeout', 0.05);
+        flush(serialDevice);
+    end
 
     if visualize
         robot = build_placeholder_arm(urdfPath);
@@ -174,8 +185,13 @@ catch startupError
     rethrow(startupError);
 end
 
-fprintf('[START] %s, %d baud, 8N1, timer=%.3f s, visualize=%d\n', ...
-    portName, baudRate, timerPeriod, visualize);
+if usesExternalByteSource
+    fprintf('[START] %s, timer=%.3f s, visualize=%d\n', ...
+        portName, timerPeriod, visualize);
+else
+    fprintf('[START] %s, %d baud, 8N1, timer=%.3f s, visualize=%d\n', ...
+        portName, baudRate, timerPeriod, visualize);
+end
 fprintf('[INFO] 原始值和关节角显示在图窗右侧；按 V 键循环编号视图。\n');
 
 % 返回轻量控制句柄。串口对象保留在闭包内，stop() 后会解除引用并释放 COM 口。
@@ -189,17 +205,23 @@ session.refresh = @forceRefreshView;
 % 3. timer 回调：非阻塞读取、拆帧、调试打印和绘图
 % -------------------------------------------------------------------------
     function onTimerTick(~, ~)
-        if isStopping || isempty(serialDevice)
+        if isStopping || ~isempty(sourceFailureMessage) || ...
+                (~usesExternalByteSource && isempty(serialDevice))
             return;
         end
 
         try
             currentElapsed = toc(sessionClock);
-            availableByteCount = serialDevice.NumBytesAvailable;
-            if availableByteCount > 0
-                newBytes = read(serialDevice, availableByteCount, 'uint8');
+            if usesExternalByteSource
+                newBytes = byteSource.readAvailable();
+                availableByteCount = numel(newBytes);
             else
-                newBytes = zeros(1, 0, 'uint8');
+                availableByteCount = serialDevice.NumBytesAvailable;
+                if availableByteCount > 0
+                    newBytes = read(serialDevice, availableByteCount, 'uint8');
+                else
+                    newBytes = zeros(1, 0, 'uint8');
+                end
             end
             if availableByteCount <= 0
                 if consoleDiagnostics && currentElapsed - lastConsoleReportElapsed >= 2.0
@@ -272,6 +294,24 @@ session.refresh = @forceRefreshView;
         catch callbackError
             % 单次读取、解析或绘图异常只记录，不让 timer 因异常数据停止。
             callbackErrorCount = callbackErrorCount + 1;
+            if usesExternalByteSource
+                sourceFailureMessage = callbackError.message;
+                if ~isempty(timerObject) && isvalid(timerObject) && ...
+                        strcmp(timerObject.Running, 'on')
+                    stop(timerObject);
+                end
+                if ~isempty(byteSource)
+                    try
+                        byteSource.close();
+                    catch
+                    end
+                    byteSource = [];
+                end
+                updateStatusPanel();
+                warning('arm_serial_visualizer:SourceStopped', ...
+                    'J-Link 数据源已停止，保留最后姿态：%s', callbackError.message);
+                return;
+            end
             warning('arm_serial_visualizer:CallbackError', ...
                 '本次 timer 回调已跳过：%s', callbackError.message);
         end
@@ -311,7 +351,9 @@ session.refresh = @forceRefreshView;
         end
 
         currentElapsed = toc(sessionClock);
-        if totalByteCount == 0
+        if ~isempty(sourceFailureMessage)
+            receiveState = sprintf('数据源已停止：%s', sourceFailureMessage);
+        elseif totalByteCount == 0
             receiveState = '未收到任何数据字节';
         elseif validFrameCount == 0
             receiveState = '已收到字节，但尚未解析出有效帧';
@@ -493,7 +535,7 @@ session.refresh = @forceRefreshView;
         fig.Pointer = 'arrow';
         lastRenderedAngles = nan(1, 7);
 
-        if ~isempty(timerObject) && isvalid(timerObject) && ...
+        if isempty(sourceFailureMessage) && ~isempty(timerObject) && isvalid(timerObject) && ...
                 strcmp(timerObject.Running, 'off')
             start(timerObject);
         end
@@ -514,7 +556,7 @@ session.refresh = @forceRefreshView;
         end
         isStopping = true;
         cleanupResources();
-        fprintf('[STOP] timer 已停止，串口 %s 已释放。\n', portName);
+        fprintf('[STOP] timer 已停止，数据源 %s 已释放。\n', portName);
     end
 
     function cleanupResources()
@@ -535,6 +577,16 @@ session.refresh = @forceRefreshView;
             serialDevice = []; % 删除最后一个引用后，MATLAB 会释放 COM 口。
         end
 
+        if usesExternalByteSource && ~isempty(byteSource)
+            try
+                byteSource.close();
+            catch cleanupError
+                warning('arm_serial_visualizer:SourceCleanupError', ...
+                    '释放外部数据源时出错：%s', cleanupError.message);
+            end
+            byteSource = [];
+        end
+
         if ~isempty(fig) && isgraphics(fig)
             if isappdata(fig, 'ArmForceRefresh')
                 rmappdata(fig, 'ArmForceRefresh');
@@ -547,12 +599,14 @@ session.refresh = @forceRefreshView;
 
     function status = getStatus()
         status.port = string(portName);
+        status.sourceType = ternary(usesExternalByteSource, "external", "serial");
         status.running = ~isStopping && ~isempty(timerObject) && ...
             isvalid(timerObject) && strcmp(timerObject.Running, 'on');
         status.validFrames = validFrameCount;
         status.estimatedDroppedFrames = droppedFrameCount;
         status.invalidFrames = invalidFrameCount;
         status.callbackErrors = callbackErrorCount;
+        status.sourceFailure = string(sourceFailureMessage);
         status.totalBytes = totalByteCount;
         status.readChunks = readChunkCount;
         status.bufferedBytes = numel(rxBuffer);
