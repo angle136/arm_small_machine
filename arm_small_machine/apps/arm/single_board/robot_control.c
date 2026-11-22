@@ -8,6 +8,10 @@
 #include "bsp_def.h"
 #include "tx_api.h"
 
+#if (ARM_JLINK_RTT_ENABLE != 0)
+#include "SEGGER_RTT.h"
+#endif
+
 #include <math.h>
 #include <string.h>
 
@@ -32,6 +36,14 @@ BUFFER_SECTION static uint8_t     g_arm_link_tx_payload[BOARD_LINK_PAYLOAD_MAX];
 BUFFER_SECTION static uint8_t     g_arm_link_stop_payload[BOARD_LINK_PAYLOAD_MAX];
 static volatile uint8_t           g_arm_link_tx_enabled;
 static volatile uint8_t           g_arm_link_stop_pending;
+
+#if (ARM_JLINK_RTT_ENABLE != 0)
+#define ARM_JLINK_RTT_FRAME_SIZE (4U + ARM_BOARD_LINK_PAYLOAD_LEN)
+BUFFER_SECTION static uint8_t g_arm_jlink_rtt_buffer[ARM_JLINK_RTT_BUFFER_SIZE];
+static uint8_t                 g_arm_jlink_rtt_frame[ARM_JLINK_RTT_FRAME_SIZE];
+static uint8_t                 g_arm_jlink_rtt_sequence;
+static uint8_t                 g_arm_jlink_rtt_ready;
+#endif
 
 /* 接收端坐标偏置，仅作用于发送值，不改变本机零点、限位或重力补偿。 */
 static const float g_arm_link_angle_offset_rad[ARM_MOTOR_COUNT] = {
@@ -137,6 +149,26 @@ static void arm_link_build_active_payload(uint8_t payload[BOARD_LINK_PAYLOAD_MAX
     const uint32_t control_status = arm_link_control_status();
     memcpy(&payload[ARM_BOARD_LINK_STATUS_OFFSET], &control_status, sizeof(control_status));
 }
+
+#if (ARM_JLINK_RTT_ENABLE != 0)
+/**
+ * @brief 将当前关节快照封装为 board_link 帧并写入独立 RTT 通道。
+ * @param payload 8 个 float 加状态位的 36 字节 payload。
+ * @retval 无。
+ * @note RTT 使用 NO_BLOCK_SKIP；没有 J-Link 时不会等待，也不会影响 UART/电机线程。
+ */
+static void arm_link_write_jlink_frame(const uint8_t payload[ARM_BOARD_LINK_PAYLOAD_LEN])
+{
+    if (g_arm_jlink_rtt_ready == 0U || payload == NULL) return;
+
+    g_arm_jlink_rtt_frame[0] = BOARD_LINK_HDR;
+    g_arm_jlink_rtt_frame[1] = (uint8_t)ARM_BOARD_LINK_PAYLOAD_LEN;
+    g_arm_jlink_rtt_frame[2] = g_arm_jlink_rtt_sequence++;
+    memcpy(&g_arm_jlink_rtt_frame[3], payload, ARM_BOARD_LINK_PAYLOAD_LEN);
+    g_arm_jlink_rtt_frame[3U + ARM_BOARD_LINK_PAYLOAD_LEN] = BOARD_LINK_TAIL;
+    (void)SEGGER_RTT_Write(ARM_JLINK_RTT_CHANNEL, g_arm_jlink_rtt_frame, sizeof(g_arm_jlink_rtt_frame));
+}
+#endif
 
 /**
  * @brief 在持锁状态下从最后活动帧构造一次夹爪零速停止帧。
@@ -249,6 +281,13 @@ static void arm_link_tx_task(ULONG thread_input)
         uint8_t     stop_frame  = 0U;
         uint8_t     send_ready  = arm_link_take_tx_payload(&stop_frame);
 
+#if (ARM_JLINK_RTT_ENABLE != 0)
+        /* RTT 调试流独立于重力补偿安全门，单独接 J-Link 也能观察当前关节。 */
+        uint8_t rtt_payload[ARM_BOARD_LINK_PAYLOAD_LEN];
+        arm_link_build_active_payload(rtt_payload);
+        arm_link_write_jlink_frame(rtt_payload);
+#endif
+
         if (send_ready != 0U && (stop_frame != 0U || g_arm_link_tx_enabled != 0U))
         {
             /* UART 等待发生在锁外，控制线程仍可继续刷新安全状态和快照。 */
@@ -325,6 +364,14 @@ void robot_control_init(void)
     board_link_init();
     arm_remote_init();
     arm_gravity_init();
+
+#if (ARM_JLINK_RTT_ENABLE != 0)
+    const int rtt_result = SEGGER_RTT_ConfigUpBuffer(ARM_JLINK_RTT_CHANNEL, "ArmLink", g_arm_jlink_rtt_buffer, sizeof(g_arm_jlink_rtt_buffer),
+                                                     SEGGER_RTT_MODE_NO_BLOCK_SKIP);
+    g_arm_jlink_rtt_ready = (rtt_result == 0) ? 1U : 0U;
+    if (rtt_result != 0)
+        LOG_E("J-Link RTT arm frame channel init failed: channel=%u result=%d", (unsigned)ARM_JLINK_RTT_CHANNEL, rtt_result);
+#endif
 
     UINT payload_mutex_status = tx_mutex_create(&g_arm_link_payload_mutex, "arm_link_payload", TX_INHERIT);
     if (payload_mutex_status != TX_SUCCESS)

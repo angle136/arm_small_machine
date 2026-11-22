@@ -19,6 +19,11 @@ include(${CMAKE_CURRENT_LIST_DIR}/../modules/module_config.cmake)
 # ARM 重力补偿遥控安全门默认关闭；apps/<robot>/robot.cmake 可按目标机器人覆盖。
 set(ARM_GRAVITY_REMOTE_GUARD_ENABLE 0)
 
+# 默认关闭；apps/arm/robot.cmake 为需要 J-Link 关节帧的目标打开。
+set(ARM_JLINK_RTT_ENABLE 0)
+set(ARM_JLINK_RTT_CHANNEL 1)
+set(ARM_JLINK_RTT_BUFFER_SIZE 2048)
+
 # ARM 软件角度/raw 限位默认开启；apps/<robot>/robot.cmake 可按目标机器人覆盖。
 set(ARM_SOFTWARE_LIMIT_ENABLE 1)
 

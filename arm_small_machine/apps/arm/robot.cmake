@@ -29,3 +29,9 @@ set(BOARD_LINK_RX_BUF_SIZE          256)
 set(BOARD_LINK_OFFLINE_ENABLE       1)
 set(BOARD_LINK_OFFLINE_TIMEOUT_MS   100)
 set(BOARD_LINK_OFFLINE_BEEP_TIMES   0)
+
+# J-Link RTT：Channel 0 保留普通日志，Channel 1 输出 board_link 二进制帧。
+# 未连接 J-Link 或缓冲区满时直接丢帧，不影响电机和 USART6。
+set(ARM_JLINK_RTT_ENABLE            1)
+set(ARM_JLINK_RTT_CHANNEL           1)
+set(ARM_JLINK_RTT_BUFFER_SIZE       2048)

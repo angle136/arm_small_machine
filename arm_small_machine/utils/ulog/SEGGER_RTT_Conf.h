@@ -91,7 +91,7 @@ Revision: $Rev: 24316 $
 // Up-channel 1: SystemView
 //
 #ifndef SEGGER_RTT_MAX_NUM_UP_BUFFERS
-#define SEGGER_RTT_MAX_NUM_UP_BUFFERS (1) // Max. number of up-buffers (T->H) available on this target    (Default: 3)
+#define SEGGER_RTT_MAX_NUM_UP_BUFFERS (2) // Channel 0 logs + Channel 1 arm board-link frames
 #endif
 //
 // Most common case:
