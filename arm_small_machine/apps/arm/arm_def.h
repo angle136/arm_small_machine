@@ -66,12 +66,13 @@ typedef enum
 
 #define ARM_J5_GRAVITY_OUTPUT_ENABLE       1U
 #define ARM_J5_GRAVITY_COM                 0.38f
-#define ARM_J5_GRAVITY_TEST_SCALE          1.0f
-#define ARM_J5_GRAVITY_OUTPUT_SIGN         (-1.0f)
+#define ARM_J5_GRAVITY_TEST_SCALE          1.35f
+#define ARM_J5_GRAVITY_AXIS_DIR            (-1.0f)
+#define ARM_J5_GRAVITY_OUTPUT_SIGN         1.0f
 
 #define ARM_J4_GRAVITY_OUTPUT_ENABLE       1U
 #define ARM_J4_GRAVITY_COUPLE_SCALE        1.1f
-#define ARM_J4_GRAVITY_TEST_SCALE          1.0f
+#define ARM_J4_GRAVITY_TEST_SCALE          1.18f
 #define ARM_J4_GRAVITY_OUTPUT_SIGN         (-1.0f)
 
 #define ARM_J2_GRAVITY_OUTPUT_ENABLE       1U
@@ -84,7 +85,7 @@ typedef enum
 #define ARM_J2_DISTAL_BASE_ARM_M           0.20f
 #define ARM_J2_DISTAL_J3_ARM_M             0.12f
 #define ARM_J2_DISTAL_WRIST_ARM_M          0.08f
-#define ARM_J2_GRAVITY_TEST_SCALE          1.0f
+#define ARM_J2_GRAVITY_TEST_SCALE          1.05f
 #define ARM_J2_GRAVITY_OUTPUT_SIGN         1.0f
 
 #define ARM_J3_GRAVITY_OUTPUT_ENABLE       1U
@@ -92,13 +93,16 @@ typedef enum
 #define ARM_J3_DISTAL_MASS                 4.5f
 #define ARM_J3_LINK_ARM_M                  0.12f
 #define ARM_J3_WRIST_ARM_M                 0.08f
-#define ARM_J3_GRAVITY_TEST_SCALE          1.0f
+#define ARM_J3_GRAVITY_TEST_SCALE          1.17f
 #define ARM_J3_GRAVITY_OUTPUT_SIGN         1.0f
 
 /* J1/J6/J7 不参与重力补偿；基础使能用于解除失能状态下的电磁阻尼。 */
 #define ARM_J1_ZERO_TORQUE_ENABLE          1U
 #define ARM_J6_ZERO_TORQUE_ENABLE          1U
 #define ARM_J7_ZERO_TORQUE_ENABLE          0U
+
+/* 临时调试开关：忽略 J7 反馈就绪状态；J7 输出仍由下方使能宏保持关闭。 */
+#define ARM_GRAVITY_IGNORE_J7_FEEDBACK_ENABLE 1U
 
 /*
  * 手动拖动模式的粘滞阻尼。

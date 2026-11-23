@@ -436,7 +436,13 @@ uint8_t arm_motor_all_feedback_ready(void)
 {
     for (size_t i = 0; i < ARM_MOTOR_COUNT; ++i)
     {
+#if (ARM_GRAVITY_IGNORE_J7_FEEDBACK_ENABLE == 0U)
         if (g_arm_feedback_snapshot.joint[i].online == 0U || g_arm_feedback_snapshot.joint[i].valid == 0U) return 0U;
+#else
+        if (i != ARM_JOINT_J7 &&
+            (g_arm_feedback_snapshot.joint[i].online == 0U || g_arm_feedback_snapshot.joint[i].valid == 0U))
+            return 0U;
+#endif
     }
     return 1U;
 }

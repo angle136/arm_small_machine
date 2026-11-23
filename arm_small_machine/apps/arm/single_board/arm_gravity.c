@@ -140,7 +140,7 @@ static void arm_gravity_calculate(Arm_Gravity_Result_t *result)
     result->q2                                       = feedback->joint[ARM_JOINT_J2].model_angle_rad;
     result->q3                                       = feedback->joint[ARM_JOINT_J3].model_angle_rad;
     result->q4                                       = feedback->joint[ARM_JOINT_J4].model_angle_rad;
-    result->q5                                       = feedback->joint[ARM_JOINT_J5].model_angle_rad;
+    result->q5                                       = ARM_J5_GRAVITY_AXIS_DIR * feedback->joint[ARM_JOINT_J5].model_angle_rad;
 
     const float q23     = result->q2 + result->q3;
     const float sin_q23 = sinf(q23);
