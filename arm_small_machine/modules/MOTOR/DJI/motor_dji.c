@@ -89,8 +89,8 @@ static void dji_can_rx_callback(Can_Device *dev, const uint8_t *data, uint8_t le
          * 首帧只建立 GM6020 多圈累计基线，不根据上电初始值判断跨圈。
          * 这样 J4 上电时不会因为 ecd 与默认 0 的差值过大而误减/加一圈。
          */
-        motor->measure.last_ecd       = motor->measure.ecd;
-        motor->measure.total_round   = 0;
+        motor->measure.last_ecd         = motor->measure.ecd;
+        motor->measure.total_round      = 0;
         motor->base.measure.total_angle = motor->base.measure.single_round_angle;
     }
     else
@@ -102,9 +102,8 @@ static void dji_can_rx_callback(Can_Device *dev, const uint8_t *data, uint8_t le
         else if (delta_ecd < -4096)
             motor->measure.total_round++;
 
-        motor->base.measure.total_angle =
-            (float)motor->measure.total_round * (2.0f * PI) + motor->base.measure.single_round_angle;
-        motor->measure.last_ecd = motor->measure.ecd;
+        motor->base.measure.total_angle = (float)motor->measure.total_round * (2.0f * PI) + motor->base.measure.single_round_angle;
+        motor->measure.last_ecd         = motor->measure.ecd;
     }
 
     motor->base.measure.torque_nm = motor->base.controller.output_torque;
@@ -132,8 +131,8 @@ static int32_t dji_get_raw_position(Motor_Base *base)
 
 static void dji_apply(Motor_Base *base)
 {
-    DJI_Motor_t *motor   = MOTOR_GET_DERIVED(base, DJI_Motor_t);
-    uint8_t      offline = (base->offline_dev != NULL && Module_Offline_get_device_status(base->offline_dev) == STATE_OFFLINE);
+    DJI_Motor_t *motor     = MOTOR_GET_DERIVED(base, DJI_Motor_t);
+    uint8_t      offline   = (base->offline_dev != NULL && Module_Offline_get_device_status(base->offline_dev) == STATE_OFFLINE);
     uint8_t      safety_ok = Motor_SafetyCheckBeforeApply(base);
 
     if (offline || base->setting.enableflag == 0 || safety_ok == 0U)
@@ -145,6 +144,15 @@ static void dji_apply(Motor_Base *base)
     }
 
     float torque = base->controller.output_torque;
+
+    /* 未配置力矩常数时只允许保持零输出，避免未知参数导致除零或误发电流。 */
+    if (base->info.gear_ratio <= 0.0f || base->info.torque_constant <= 0.0f)
+    {
+        sender_assignment[motor->sender_group].data[2 * motor->message_num]     = 0;
+        sender_assignment[motor->sender_group].data[2 * motor->message_num + 1] = 0;
+        dji_batch_send(motor);
+        return;
+    }
 
     /* 扭矩 → 电流 → 整数值 (CAN 报文) */
     switch (base->info.motor_type)

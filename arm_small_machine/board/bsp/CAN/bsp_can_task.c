@@ -8,9 +8,9 @@
 #define LOG_LVL LOG_LVL_INFO
 #include "ulog_def.h"
 
-#define BSP_CAN_RX_TASK_PRIORITY 3
-#define BSP_CAN_TX_TASK_PRIORITY 4
-#define BSP_CAN_TASK_STACK_SIZE  1024U
+#define BSP_CAN_RX_TASK_PRIORITY      3
+#define BSP_CAN_TX_TASK_PRIORITY      4
+#define BSP_CAN_TASK_STACK_SIZE       1024U
 
 TX_SEMAPHORE g_can_rx_sem;
 TX_SEMAPHORE g_can_tx_sem;

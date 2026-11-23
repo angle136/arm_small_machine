@@ -98,7 +98,7 @@ typedef enum
 /* J1/J6/J7 不参与重力补偿；基础使能用于解除失能状态下的电磁阻尼。 */
 #define ARM_J1_ZERO_TORQUE_ENABLE          1U
 #define ARM_J6_ZERO_TORQUE_ENABLE          1U
-#define ARM_J7_ZERO_TORQUE_ENABLE          1U
+#define ARM_J7_ZERO_TORQUE_ENABLE          0U
 
 /*
  * 手动拖动模式的粘滞阻尼。
@@ -141,7 +141,7 @@ typedef enum
 #define ARM_J6_DAMPING_DEADBAND_RAD_S      0.04f
 #define ARM_J6_DAMPING_LIMIT_NM            0.05f
 
-#define ARM_J7_DAMPING_ENABLE              1U
+#define ARM_J7_DAMPING_ENABLE              0U
 #define ARM_J7_DAMPING_COEFF               0.04f
 #define ARM_J7_DAMPING_DEADBAND_RAD_S      0.04f
 #define ARM_J7_DAMPING_LIMIT_NM            0.15f
@@ -159,8 +159,12 @@ typedef enum
 #define ARM_J5_DM_RX_ID                    0x15U
 #define ARM_J6_DM_TX_ID                    0x06U
 #define ARM_J6_DM_RX_ID                    0x16U
-#define ARM_J7_DM_TX_ID                    0x07U
-#define ARM_J7_DM_RX_ID                    0x17U
+#define ARM_J7_DJI_TX_ID                   0x01U
+#define ARM_J7_DJI_RX_ID                   0x201U
+
+/* J7 当前只读取反馈，转矩常数确认前禁止主动电流输出。 */
+#define ARM_J7_DJI_GEAR_RATIO              1.0f
+#define ARM_J7_DJI_TORQUE_CONSTANT_NM_PER_A 0.0f
 
 /*
  * 机械臂竖直零点软件标定值。
@@ -169,28 +173,28 @@ typedef enum
  * 使用范围：仅用于 APP 层将电机原始反馈换算为机械臂关节坐标，不写入电机内部零点。
  */
 #define ARM_J1_ZERO_VALID                  1U
-#define ARM_J1_ZERO_RAW_RAD                (-1.836f)
+#define ARM_J1_ZERO_RAW_RAD                (-1.788f)
 #define ARM_J1_JOINT_DIR                   1.0f
 
 #define ARM_J2_ZERO_VALID                  1U
-#define ARM_J2_ZERO_RAW_RAD                (-0.952f)
+#define ARM_J2_ZERO_RAW_RAD                (-1.048f)
 #define ARM_J2_JOINT_DIR                   (-1.0f)
 
 #define ARM_J3_ZERO_VALID                  1U
-#define ARM_J3_ZERO_RAW_RAD                3.148f
+#define ARM_J3_ZERO_RAW_RAD                3.158f
 #define ARM_J3_JOINT_DIR                   1.0f
 
 #define ARM_J4_ZERO_VALID                  1U
-#define ARM_J4_ZERO_ECD                    1320U
-#define ARM_J4_ZERO_RAW_RAD                1.01242732f
+#define ARM_J4_ZERO_ECD                    5906U
+#define ARM_J4_ZERO_RAW_RAD                4.52984527f
 #define ARM_J4_JOINT_DIR                   1.0f
 
 #define ARM_J5_ZERO_VALID                  1U
-#define ARM_J5_ZERO_RAW_RAD                0.040f
+#define ARM_J5_ZERO_RAW_RAD                (-2.046f)
 #define ARM_J5_JOINT_DIR                   (-1.0f)
 
 #define ARM_J6_ZERO_VALID                  1U
-#define ARM_J6_ZERO_RAW_RAD                1.086f
+#define ARM_J6_ZERO_RAW_RAD                (-1.533f)
 #define ARM_J6_JOINT_DIR                   1.0f
 
 #define ARM_J7_ZERO_VALID                  1U
