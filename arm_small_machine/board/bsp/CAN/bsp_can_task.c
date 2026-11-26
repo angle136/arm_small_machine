@@ -8,9 +8,12 @@
 #define LOG_LVL LOG_LVL_INFO
 #include "ulog_def.h"
 
-#define BSP_CAN_RX_TASK_PRIORITY      3
-#define BSP_CAN_TX_TASK_PRIORITY      4
-#define BSP_CAN_TASK_STACK_SIZE       1024U
+#define BSP_CAN_RX_TASK_PRIORITY   3
+#define BSP_CAN_TX_TASK_PRIORITY   4
+#define BSP_CAN_TASK_STACK_SIZE    1024U
+
+/* 临时总线监听：默认恢复 CAN1 的逐帧日志，调试结束后改为 0 即可关闭。 */
+#define BSP_CAN_CAN1_RX_LOG_ENABLE 0U
 
 TX_SEMAPHORE g_can_rx_sem;
 TX_SEMAPHORE g_can_tx_sem;
@@ -19,6 +22,49 @@ static TX_THREAD                  g_can_rx_thread;
 static TX_THREAD                  g_can_tx_thread;
 APPS_STACK_SECTION static uint8_t g_can_rx_stack[BSP_CAN_TASK_STACK_SIZE];
 APPS_STACK_SECTION static uint8_t g_can_tx_stack[BSP_CAN_TASK_STACK_SIZE];
+
+#if BSP_CAN_CAN1_RX_LOG_ENABLE
+static void can_log_can1_rx(const BSP_CanMsg_t *msg)
+{
+    if (msg == NULL) return;
+
+    switch (msg->len)
+    {
+    case 0:
+        LOG_I("CAN1 ID=0x%03lX IDE=Standard DLC=0 DATA=", (unsigned long)msg->id);
+        break;
+    case 1:
+        LOG_I("CAN1 ID=0x%03lX IDE=Standard DLC=1 DATA=%02X", (unsigned long)msg->id, msg->data[0]);
+        break;
+    case 2:
+        LOG_I("CAN1 ID=0x%03lX IDE=Standard DLC=2 DATA=%02X %02X", (unsigned long)msg->id, msg->data[0], msg->data[1]);
+        break;
+    case 3:
+        LOG_I("CAN1 ID=0x%03lX IDE=Standard DLC=3 DATA=%02X %02X %02X", (unsigned long)msg->id, msg->data[0], msg->data[1], msg->data[2]);
+        break;
+    case 4:
+        LOG_I("CAN1 ID=0x%03lX IDE=Standard DLC=4 DATA=%02X %02X %02X %02X", (unsigned long)msg->id, msg->data[0], msg->data[1], msg->data[2],
+              msg->data[3]);
+        break;
+    case 5:
+        LOG_I("CAN1 ID=0x%03lX IDE=Standard DLC=5 DATA=%02X %02X %02X %02X %02X", (unsigned long)msg->id, msg->data[0], msg->data[1], msg->data[2],
+              msg->data[3], msg->data[4]);
+        break;
+    case 6:
+        LOG_I("CAN1 ID=0x%03lX IDE=Standard DLC=6 DATA=%02X %02X %02X %02X %02X %02X", (unsigned long)msg->id, msg->data[0], msg->data[1],
+              msg->data[2], msg->data[3], msg->data[4], msg->data[5]);
+        break;
+    case 7:
+        LOG_I("CAN1 ID=0x%03lX IDE=Standard DLC=7 DATA=%02X %02X %02X %02X %02X %02X %02X", (unsigned long)msg->id, msg->data[0], msg->data[1],
+              msg->data[2], msg->data[3], msg->data[4], msg->data[5], msg->data[6]);
+        break;
+    default:
+        LOG_I("CAN1 ID=0x%03lX IDE=Standard DLC=8 DATA=%02X %02X %02X %02X %02X %02X %02X %02X %02X", (unsigned long)msg->id, msg->data[0],
+              msg->data[1], msg->data[2], msg->data[3], msg->data[4], msg->data[5], msg->data[6], msg->data[7]);
+        break;
+    }
+}
+#endif
 
 /* RX 任务 */
 static void can_rx_task_entry(ULONG arg)
@@ -36,6 +82,9 @@ static void can_rx_task_entry(ULONG arg)
             BSP_CanMsg_t msg;
             while (kfifo_get(&g_can_bus[i].rx_fifo, &msg))
             {
+#if BSP_CAN_CAN1_RX_LOG_ENABLE
+                if (BSP_CAN_IS_HANDLE1(g_can_bus[i].hcan)) can_log_can1_rx(&msg);
+#endif
                 Can_Device *dev = can_dev_find(&g_can_bus[i], msg.id);
                 if (dev != NULL && dev->rx_callback != NULL) dev->rx_callback(dev, msg.data, msg.len);
             }

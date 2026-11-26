@@ -163,12 +163,8 @@ typedef enum
 #define ARM_J5_DM_RX_ID                    0x15U
 #define ARM_J6_DM_TX_ID                    0x06U
 #define ARM_J6_DM_RX_ID                    0x16U
-#define ARM_J7_DJI_TX_ID                   0x01U
-#define ARM_J7_DJI_RX_ID                   0x201U
-
-/* J7 当前只读取反馈，转矩常数确认前禁止主动电流输出。 */
-#define ARM_J7_DJI_GEAR_RATIO              1.0f
-#define ARM_J7_DJI_TORQUE_CONSTANT_NM_PER_A 0.0f
+#define ARM_J7_DM_TX_ID                    0x07U
+#define ARM_J7_DM_RX_ID                    0x17U
 
 /*
  * 机械臂竖直零点软件标定值。

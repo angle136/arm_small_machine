@@ -13,7 +13,7 @@
 #include "ulog_def.h"
 
 #define ARM_PI_RAD         3.14159265354f
-#define ARM_DM_MOTOR_COUNT 5U
+#define ARM_DM_MOTOR_COUNT 6U
 
 /** 一个达妙关节从 CAN 注册到软件限位的完整静态描述。 */
 typedef struct
@@ -40,9 +40,8 @@ typedef struct
 
 static DM_Motor_t       *g_dm_motors[ARM_DM_MOTOR_COUNT];
 static DJI_Motor_t      *g_j4_motor;
-static DJI_Motor_t      *g_j7_motor;
-static const char *const g_dm_joint_names[ARM_DM_MOTOR_COUNT]    = {"J1", "J2", "J3", "J5", "J6"};
-static const uint8_t     g_dm_snapshot_index[ARM_DM_MOTOR_COUNT] = {ARM_JOINT_J1, ARM_JOINT_J2, ARM_JOINT_J3, ARM_JOINT_J5, ARM_JOINT_J6};
+static const char *const g_dm_joint_names[ARM_DM_MOTOR_COUNT] = {"J1", "J2", "J3", "J5", "J6", "J7"};
+static const uint8_t g_dm_snapshot_index[ARM_DM_MOTOR_COUNT]  = {ARM_JOINT_J1, ARM_JOINT_J2, ARM_JOINT_J3, ARM_JOINT_J5, ARM_JOINT_J6, ARM_JOINT_J7};
 
 volatile Arm_Feedback_Snapshot_t g_arm_feedback_snapshot;
 
@@ -240,44 +239,6 @@ static void arm_motor_register_j4(void)
 }
 
 /**
- * @brief 注册 J7 DJI M3508，仅建立反馈链路。
- * @param 无。
- * @retval 无。
- * @note J7 当前未启用阻尼和主动输出；转矩常数未知时由 DJI 驱动安全保护禁止输出换算。
- */
-static void arm_motor_register_j7(void)
-{
-    Motor_Init_Config_s config = {0};
-
-    config.offline_init_config.name           = "J7_M3508";
-    config.offline_init_config.timeout_ms     = 500;
-    config.offline_init_config.beep_times     = 0;
-    config.offline_init_config.enable         = MOTOR_OFFLINE_ENABLE;
-    config.transport                          = MOTOR_TRANSPORT_CAN;
-    config.transport_config.can.hcan          = BSP_CAN_HANDLE1;
-    config.transport_config.can.tx_id         = ARM_J7_DJI_TX_ID;
-    config.setting_init_config.algorithm_type = CONTROL_LQR;
-    config.setting_init_config.loop_type      = OPEN_LOOP;
-    config.setting_init_config.enableflag     = 0;
-    config.motor_init_info.motor_type         = M3508;
-    config.motor_init_info.gear_ratio         = ARM_J7_DJI_GEAR_RATIO;
-    config.motor_init_info.torque_constant    = ARM_J7_DJI_TORQUE_CONSTANT_NM_PER_A;
-    config.motor_init_info.max_torque         = ARM_TEMP_OUTPUT_TORQUE_LIMIT_NM;
-    config.safety_limit_config =
-        (Motor_Safety_Limit_s)ARM_ANGLE_LIMIT_CONFIG(ARM_J7_LIMIT_ENABLE, MOTOR_SAFETY_ANGLE_SINGLE, ARM_J7_ANGLE_MIN, ARM_J7_ANGLE_MAX);
-
-    g_j7_motor = Motor_DJI_Init(&config);
-    if (g_j7_motor == NULL)
-    {
-        LOG_E("J7_M3508 registration failed");
-        return;
-    }
-
-    Motor_Stop(&g_j7_motor->base);
-    LOG_I("registered J7_M3508 CAN tx=0x%03X rx=0x%03X", ARM_J7_DJI_TX_ID, ARM_J7_DJI_RX_ID);
-}
-
-/**
  * @brief 按 J1~J7 索引获取电机基类指针。
  * @param joint_index 输入，0~6 对应 J1~J7。
  * @return Motor_Base* 已注册电机基类；索引非法或未注册返回 NULL。
@@ -286,14 +247,13 @@ static void arm_motor_register_j7(void)
 static Motor_Base *arm_motor_base(uint8_t joint_index)
 {
     if (joint_index == ARM_JOINT_J4) return (g_j4_motor != NULL) ? &g_j4_motor->base : NULL;
-    if (joint_index == ARM_JOINT_J7) return (g_j7_motor != NULL) ? &g_j7_motor->base : NULL;
     if (joint_index < ARM_JOINT_J4) return (g_dm_motors[joint_index] != NULL) ? &g_dm_motors[joint_index]->base : NULL;
-    if (joint_index < ARM_JOINT_J7) return (g_dm_motors[joint_index - 1U] != NULL) ? &g_dm_motors[joint_index - 1U]->base : NULL;
+    if (joint_index <= ARM_JOINT_J7) return (g_dm_motors[joint_index - 1U] != NULL) ? &g_dm_motors[joint_index - 1U]->base : NULL;
     return NULL;
 }
 
 /**
- * @brief 注册五个达妙关节、J4 GM6020 和 J7 M3508，并保持全部关节失能。
+ * @brief 注册六个达妙关节、J4 GM6020，并保持全部关节失能。
  * @param 无。
  * @retval 无。
  */
@@ -310,16 +270,16 @@ void arm_motor_init(void)
          ARM_ANGLE_LIMIT_CONFIG(ARM_J5_LIMIT_ENABLE, MOTOR_SAFETY_ANGLE_SINGLE, ARM_J5_ANGLE_MIN, ARM_J5_ANGLE_MAX)},
         {"J6_DM4310", BSP_CAN_HANDLE1, ARM_J6_DM_TX_ID, ARM_J6_DM_RX_ID, DM4310,
          ARM_ANGLE_LIMIT_CONFIG(ARM_J6_LIMIT_ENABLE, MOTOR_SAFETY_ANGLE_TOTAL, ARM_J6_ANGLE_MIN, ARM_J6_ANGLE_MAX)},
+        {"J7_DM3507", BSP_CAN_HANDLE1, ARM_J7_DM_TX_ID, ARM_J7_DM_RX_ID, DM3507,
+         ARM_ANGLE_LIMIT_CONFIG(ARM_J7_LIMIT_ENABLE, MOTOR_SAFETY_ANGLE_SINGLE, ARM_J7_ANGLE_MIN, ARM_J7_ANGLE_MAX)},
     };
 
     memset(g_dm_motors, 0, sizeof(g_dm_motors));
     g_j4_motor = NULL;
-    g_j7_motor = NULL;
     memset((void *)&g_arm_feedback_snapshot, 0, sizeof(g_arm_feedback_snapshot));
 
     for (size_t i = 0U; i < ARM_DM_MOTOR_COUNT; ++i) arm_motor_register_dm(i, &dm_descriptors[i]);
     arm_motor_register_j4();
-    arm_motor_register_j7();
     arm_motor_stop_all();
 }
 
@@ -392,34 +352,6 @@ void arm_motor_feedback_update(void)
         feedback->temperature_1     = g_j4_motor->measure.temperature;
         feedback->temperature_2     = 0U;
     }
-
-    if (g_j7_motor != NULL)
-    {
-        volatile Arm_Motor_Feedback_t *feedback          = &g_arm_feedback_snapshot.joint[ARM_JOINT_J7];
-        Can_Device                    *can_dev           = (Can_Device *)g_j7_motor->base.transport_dev;
-        float                          joint_angle_rad   = arm_motor_joint_angle(ARM_JOINT_J7, g_j7_motor->base.measure.single_round_angle);
-        float                          joint_speed_rad_s = arm_motor_joint_speed(ARM_JOINT_J7, g_j7_motor->base.measure.speed_rad);
-
-        feedback->online            = arm_motor_feedback_online(&g_j7_motor->base);
-        feedback->valid             = g_j7_motor->base.feedback_valid;
-        feedback->enabled           = g_j7_motor->base.setting.enableflag;
-        feedback->feedback_id       = 0U;
-        feedback->tx_id             = (can_dev != NULL) ? can_dev->tx_id : 0U;
-        feedback->rx_id             = (can_dev != NULL) ? can_dev->rx_id : 0U;
-        feedback->raw_position      = g_j7_motor->measure.ecd;
-        feedback->raw_speed         = (int16_t)g_j7_motor->measure.speed_rpm;
-        feedback->raw_current       = g_j7_motor->measure.real_current;
-        feedback->angle_raw_rad     = g_j7_motor->base.measure.single_round_angle;
-        feedback->angle_rad         = g_j7_motor->base.measure.total_angle;
-        feedback->speed_rad_s       = g_j7_motor->base.measure.speed_rad;
-        feedback->torque_nm         = g_j7_motor->base.measure.torque_nm;
-        feedback->joint_angle_rad   = joint_angle_rad;
-        feedback->joint_speed_rad_s = joint_speed_rad_s;
-        feedback->model_angle_rad   = arm_motor_model_angle(ARM_JOINT_J7, joint_angle_rad);
-        feedback->model_speed_rad_s = joint_speed_rad_s;
-        feedback->temperature_1     = g_j7_motor->measure.temperature;
-        feedback->temperature_2     = 0U;
-    }
 }
 
 /**
@@ -439,9 +371,7 @@ uint8_t arm_motor_all_feedback_ready(void)
 #if (ARM_GRAVITY_IGNORE_J7_FEEDBACK_ENABLE == 0U)
         if (g_arm_feedback_snapshot.joint[i].online == 0U || g_arm_feedback_snapshot.joint[i].valid == 0U) return 0U;
 #else
-        if (i != ARM_JOINT_J7 &&
-            (g_arm_feedback_snapshot.joint[i].online == 0U || g_arm_feedback_snapshot.joint[i].valid == 0U))
-            return 0U;
+        if (i != ARM_JOINT_J7 && (g_arm_feedback_snapshot.joint[i].online == 0U || g_arm_feedback_snapshot.joint[i].valid == 0U)) return 0U;
 #endif
     }
     return 1U;
@@ -530,18 +460,5 @@ void arm_motor_log_status(void)
               (unsigned)arm_motor_feedback_online(&g_j4_motor->base), (unsigned)g_j4_motor->base.feedback_valid,
               (unsigned)g_j4_motor->base.setting.enableflag, (unsigned)g_j4_motor->measure.ecd, raw_angle, total_angle, joint_angle, joint_speed,
               g_j4_motor->measure.speed_rpm, (int)g_j4_motor->measure.real_current, (unsigned)g_j4_motor->measure.temperature);
-    }
-
-    if (g_j7_motor != NULL)
-    {
-        float raw_angle   = g_j7_motor->base.measure.single_round_angle;
-        float total_angle = g_j7_motor->base.measure.total_angle;
-        float joint_angle = arm_motor_joint_angle(ARM_JOINT_J7, raw_angle);
-        float joint_speed = arm_motor_joint_speed(ARM_JOINT_J7, g_j7_motor->base.measure.speed_rad);
-
-        LOG_I("J7 M3508 on=%u v=%u en=%u ecd=%u raw=%.3f total=%.3f q=%.3f dq=%.3f rpm=%.1f cur=%d T=%u",
-              (unsigned)arm_motor_feedback_online(&g_j7_motor->base), (unsigned)g_j7_motor->base.feedback_valid,
-              (unsigned)g_j7_motor->base.setting.enableflag, (unsigned)g_j7_motor->measure.ecd, raw_angle, total_angle, joint_angle, joint_speed,
-              g_j7_motor->measure.speed_rpm, (int)g_j7_motor->measure.real_current, (unsigned)g_j7_motor->measure.temperature);
     }
 }
