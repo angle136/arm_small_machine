@@ -101,8 +101,8 @@ typedef enum
 #define ARM_J6_ZERO_TORQUE_ENABLE          1U
 #define ARM_J7_ZERO_TORQUE_ENABLE          0U
 
-/* 临时调试开关：忽略 J7 反馈就绪状态；J7 输出仍由下方使能宏保持关闭。 */
-#define ARM_GRAVITY_IGNORE_J7_FEEDBACK_ENABLE 1U
+/* 七个关节均须有在线且有效的反馈，才允许通过重力补偿的反馈保护。 */
+#define ARM_GRAVITY_IGNORE_J7_FEEDBACK_ENABLE 0U
 
 /*
  * 手动拖动模式的粘滞阻尼。
